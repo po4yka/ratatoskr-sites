@@ -278,3 +278,72 @@ async fn a_file_and_a_folder_of_one_name_are_unsafe() -> Outcome {
     }
     store.cleanup().await
 }
+
+/// Review L17: each kind of entry and path that the receipt refuses, with nothing stored.
+#[tokio::test]
+async fn links_devices_duplicates_and_non_nfc_paths_are_refused() -> Outcome {
+    let store = Store::new(5).await?;
+    let bundle = Bundle::new(&commit('f'));
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "a hard link",
+            bundle.archive_with(&bundle.files, |builder| {
+                append_raw(
+                    builder,
+                    b"copy.html",
+                    tar::EntryType::Link,
+                    b"",
+                    Some("index.html"),
+                )
+            })?,
+        ),
+        (
+            "a device entry",
+            bundle.archive_with(&bundle.files, |builder| {
+                append_raw(builder, b"tty", tar::EntryType::Char, b"", None)
+            })?,
+        ),
+        (
+            "a duplicate entry",
+            bundle.archive_with(&bundle.files, |builder| {
+                append(builder, "index.html", b"<title>again</title>")
+            })?,
+        ),
+        (
+            "a path that is not NFC",
+            bundle.archive_with(&bundle.files, |builder| {
+                append(builder, "cafe\u{301}.html", b"<title>cafe</title>")
+            })?,
+        ),
+    ];
+    for (case, archive) in cases {
+        let refused = refusal(&store, archive).await?;
+        assert_eq!(
+            refused.as_ref().map(|(code, ..)| code.as_str()),
+            Some("sites.bundle.unsafe_path"),
+            "{case}"
+        );
+        assert_eq!(
+            store.stored()?,
+            Vec::<String>::new(),
+            "{case}: nothing is stored"
+        );
+    }
+    store.cleanup().await
+}
+
+/// Review L17: a bundle whose files pass the limit is refused, with nothing stored.
+#[tokio::test]
+async fn a_bundle_over_the_limit_is_too_large() -> Outcome {
+    let store = Store::with_limit(5, 64).await?;
+    let bundle = Bundle::new(&commit('f')).with("big.bin", &[b'x'; 100], false);
+    let refused = refusal(&store, bundle.archive()?).await?;
+    assert_eq!(
+        refused
+            .as_ref()
+            .map(|(code, status, _)| (code.as_str(), *status)),
+        Some(("sites.bundle.too_large", 413))
+    );
+    assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
+    store.cleanup().await
+}

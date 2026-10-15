@@ -56,7 +56,7 @@ domain API (SITE-026 group 8), so the service needs the routes that call the sto
 - [x] 8.8 GREEN (M4): retention removes only deploys stored before the activation that runs. Verify 8.7.
 - [x] 8.9 RED (L1, L11): add `receipt.rs::a_manifest_that_lists_itself_is_reserved` and `receipt.rs::a_file_and_a_folder_of_one_name_are_unsafe`. Confirm that the first fails with `sites.bundle.digest_mismatch` and the second with `sites.service_unavailable`.
 - [x] 8.10 GREEN (L1, L11, L13): refuse a listed `ratatoskr-bundle.json` with `sites.bundle.reserved_path`, refuse a path whose prefix is a file of the bundle with `sites.bundle.unsafe_path`, and fsync the bundles directory after the rename (L13; no test can observe an fsync). Verify 8.9.
-- [ ] 8.11 (L17): pin `receipt.rs` refusals of a hard link, a device entry, a bundle over the limit, a duplicate entry and a path that is not NFC. No failing test first: the rules exist since 4.2; each test passed on its first run.
+- [x] 8.11 (L17): pin `receipt.rs` refusals of a hard link, a device entry, a bundle over the limit, a duplicate entry and a path that is not NFC. No failing test first: the rules exist since 4.2; each test passed on its first run.
 - [ ] 8.12 RED (L12): add `receipt.rs::stale_staging_is_removed_at_start`. Confirm that the assertion fails because `DeployStore::remove_stale_staging` removes nothing.
 - [ ] 8.13 GREEN (L12): remove every `.staging/` directory of the tree, and call it when the service starts. Verify 8.12.
 - [ ] 8.14 RED (L4): add `static_serving.rs::a_link_out_of_the_site_directory_serves_nothing` and `a_deploy_of_another_site_serves_nothing`. Confirm that the status assertions fail because the gateway serves them.
