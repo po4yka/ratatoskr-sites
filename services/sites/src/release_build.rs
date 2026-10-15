@@ -468,6 +468,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .begin()
                 .await
                 .map_err(BuildFailure::Database)?;
+            lock_current(&mut transaction, site_id).await?;
             provenance
                 .rewrite(&mut transaction, &release_id, built)
                 .await
@@ -528,6 +529,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .begin()
             .await
             .map_err(BuildFailure::Database)?;
+        lock_current(&mut transaction, site_id).await?;
         sqlx::query(
             "insert into sites.releases (release_id, site_id, document, page_count, built_at) \
              values ($1, $2, $3, $4, now()) on conflict (release_id) do nothing",
@@ -577,7 +579,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .map_err(BuildFailure::Database)?;
         }
         provenance
-            .write(&mut transaction, release_id)
+            .rewrite(&mut transaction, release_id, built)
             .await
             .map_err(BuildFailure::Database)?;
         sqlx::query(
@@ -647,6 +649,21 @@ pub(crate) async fn report(
     .execute(database.pool())
     .await
     .map_err(BuildFailure::Database)?;
+    Ok(())
+}
+
+/// Lock the current-release row of `site_id` until the transaction ends, so the provenance of a
+/// release and the switch to it are written by one build at a time. A site without a release has
+/// no row; the one build worker is then the only writer.
+async fn lock_current(
+    transaction: &mut sqlx::PgConnection,
+    site_id: &str,
+) -> Result<(), BuildFailure> {
+    sqlx::query("select 1 from sites.current_releases where site_id = $1 for update")
+        .bind(site_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(BuildFailure::Database)?;
     Ok(())
 }
 
