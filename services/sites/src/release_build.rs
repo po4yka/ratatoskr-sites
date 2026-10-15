@@ -195,6 +195,20 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 // ends an operation whose report is lost.
                 tracing::error!(%error, %operation_id, "the report of a build could not be written");
             }
+            if let Err(failure) = &outcome
+                && let Err(error) = sqlx::query(
+                    "insert into sites.failed_builds (operation_id, site_id, failed_at, code, \
+                     message) values ($1, $2, now(), $3, $4) on conflict do nothing",
+                )
+                .bind(operation_id)
+                .bind(&job.site_id)
+                .bind(failure.class())
+                .bind(safe_message(&failure.message()))
+                .execute(self.database.pool())
+                .await
+            {
+                tracing::warn!(%error, %operation_id, "a failed build could not be recorded");
+            }
         }
         outcome
     }

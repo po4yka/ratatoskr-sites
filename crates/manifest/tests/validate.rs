@@ -1,7 +1,7 @@
 //! SITE-025 task 5.26: a manifest that names a capability outside the closed set is refused, and
 //! the refusal names it (workspace spec `site-manifest`).
 
-use ratatoskr_sites_manifest::{MANIFEST_INVALID, parse};
+use ratatoskr_sites_manifest::{MANIFEST_INVALID, ManifestInvalid, parse};
 
 #[test]
 fn unknown_capability_is_refused() {
@@ -9,7 +9,7 @@ fn unknown_capability_is_refused() {
         publications = [\"handbook\"]\ncapabilities = [\"pages.read\", \"notes.delete\"]\n";
     let refused = parse(manifest).err();
     assert_eq!(
-        refused.as_ref().map(|refusal| refusal.class()),
+        refused.as_ref().map(ManifestInvalid::class),
         Some(MANIFEST_INVALID),
         "the manifest is refused"
     );

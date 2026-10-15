@@ -15,6 +15,7 @@ pub mod admin;
 pub mod api;
 pub mod config;
 pub mod consumer;
+pub mod effective;
 pub mod events;
 pub mod notes_blobs;
 pub mod notes_index;
@@ -207,8 +208,7 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     Ok(())
 }
 
-/// The consumers of the build commands, the note changes and the vault disconnections, and the
-/// build worker. The notes
+/// The consumers of the four durables, and the build worker. The notes
 /// index is [`UnavailableIndex`] until the notes internal index route exists.
 fn start_pipeline(
     config: &SitesConfig,
@@ -237,6 +237,7 @@ fn start_pipeline(
                 Durable::ReleaseBuilds,
                 Durable::NoteChanges,
                 Durable::VaultDisconnections,
+                Durable::Approvals,
             ],
         },
         stop,

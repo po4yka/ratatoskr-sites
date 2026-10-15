@@ -376,9 +376,16 @@ pub(crate) async fn requested_build(
         build_command(super::SITE, fixture.owner, operation_id)?,
     )
     .await?;
+    // The report is written during the build; the worker deletes the request after the build and
+    // after it refreshed the servable sites.
     let report = tokio::time::timeout(PATIENCE, async {
         loop {
-            if let Some(report) = report_of(fixture, operation_id).await? {
+            let left: i64 = sqlx::query_scalar("select count(*) from sites.build_requests")
+                .fetch_one(fixture.database.pool())
+                .await?;
+            if left == 0
+                && let Some(report) = report_of(fixture, operation_id).await?
+            {
                 return Ok::<_, Failure>(report);
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

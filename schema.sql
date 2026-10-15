@@ -63,6 +63,7 @@ create table sites.approval_projection (
     site_id          text        primary key check (site_id ~ '^[a-z0-9-]{3,40}$'),
     approved_digest  text        not null check (approved_digest ~ '^[0-9a-f]{64}$'),
     state            text        not null check (state in ('approved', 'withdrawn')),
+    capabilities     text[]      not null default '{}',
     hostname         text        not null,
     changed_at       timestamptz not null
 );
@@ -98,6 +99,19 @@ create table sites.build_requests (
 );
 
 create index build_requests_by_site on sites.build_requests (site_id, requested_at);
+
+-- The builds that a command requested and that made no release, for the release history of the
+-- owner. The operation of Platform holds the same failure; this copy is what the web client reads
+-- from the sites service.
+create table sites.failed_builds (
+    operation_id  uuid        primary key,
+    site_id       text        not null references sites.sites (site_id) on delete cascade,
+    failed_at     timestamptz not null,
+    code          text        not null,
+    message       text        not null
+);
+
+create index failed_builds_by_site on sites.failed_builds (site_id, failed_at);
 
 -- An immutable release, named by the SHA-256 of its canonical document (RFC 8785).
 create table sites.releases (

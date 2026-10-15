@@ -4,6 +4,8 @@
 //! This crate reads no file and no database. The sites service stores the bytes that it accepts by
 //! their digest.
 
+use std::fmt::Write as _;
+
 use ratatoskr_sites_contracts::SiteManifest;
 use sha2::{Digest as _, Sha256};
 
@@ -31,17 +33,21 @@ impl ManifestInvalid {
 /// # Errors
 ///
 /// [`ManifestInvalid`] when the bytes are not a valid `sites/site-manifest.v1` in TOML.
-pub fn parse(_bytes: &[u8]) -> Result<SiteManifest, ManifestInvalid> {
-    Err(ManifestInvalid {
-        detail: String::new(),
+pub fn parse(bytes: &[u8]) -> Result<SiteManifest, ManifestInvalid> {
+    let text = std::str::from_utf8(bytes).map_err(|_| ManifestInvalid {
+        detail: "the manifest is not UTF-8 text".to_owned(),
+    })?;
+    toml::from_str(text).map_err(|error| ManifestInvalid {
+        detail: error.message().to_owned(),
     })
 }
 
 /// The lower-case hex SHA-256 of the manifest bytes: the digest that an approval names.
 #[must_use]
 pub fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    let mut hex = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
 }

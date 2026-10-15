@@ -79,6 +79,10 @@ serde_jcs = "0.2"
 # pure Rust; sqlx already depends on it.
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
 
+# ---- the site manifest ----
+# `ratatoskr-site.toml` (contract `sites/site-manifest.v1`). The version of ratatoskr-contracts.
+toml = { version = "1.1", default-features = false, features = ["parse", "serde", "std"] }
+
 # ---- the bus ----
 # The outbox relay publishes to JetStream under the SITES identity, with its own inbox prefix
 # (workspace spec fleet-bus-topology). The version of ratatoskr-notes.
