@@ -17,6 +17,7 @@ pub mod admin;
 pub mod config;
 mod fault;
 mod forward;
+mod limits;
 mod serve;
 mod table;
 
@@ -45,6 +46,7 @@ pub struct Gateway {
     table: RwLock<Arc<HostTable>>,
     manifests: serve::Manifests,
     edge: forward::EdgeClient,
+    buckets: limits::Buckets,
 }
 
 impl Gateway {
@@ -53,8 +55,10 @@ impl Gateway {
     pub fn new(config: GatewayConfig) -> Arc<Self> {
         let table = HostTable::read(&config.sites.root);
         let edge = forward::client(&config.edge);
+        let buckets = limits::Buckets::new(config.limits.rate_per_second, config.limits.burst);
         Arc::new(Self {
             edge,
+            buckets,
             config,
             table: RwLock::new(Arc::new(table)),
             manifests: serve::Manifests::default(),
@@ -103,9 +107,14 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
     Router::new().fallback(handle).with_state(gateway)
 }
 
-/// Select the site of the `Host`, then serve its current deploy.
+/// Take a token of the client, select the site of the `Host`, then forward the request to Edge
+/// or serve the current deploy.
 async fn handle(State(gateway): State<Arc<Gateway>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
+    // The limit comes before any work, the host lookup too.
+    if let Err(retry_after) = gateway.buckets.take(&parts.headers) {
+        return Fault::RateLimited(retry_after).into_response();
+    }
     let host = parts
         .headers
         .get(header::HOST)

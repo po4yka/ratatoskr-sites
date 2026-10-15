@@ -205,14 +205,18 @@ async fn last_event_id_reaches_edge_unchanged() -> Outcome {
     Ok(())
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_keep_alive_only_stream_stays_open_for_two_minutes() -> Outcome {
     let edge = StubEdge::start().await?;
     let (_tree, router) = gateway(&edge)?;
-    let started = tokio::time::Instant::now();
     let response =
         tower::ServiceExt::oneshot(router, forwarded("/_r/v1/sites/site-a/events?keepalive")?)
             .await?;
+    assert_eq!(response.status(), 200, "the stream is open");
+    // The clock is paused once the connection is open, so a paused clock never runs the connect
+    // timeout of the gateway; the two minutes of the stream run on it.
+    tokio::time::pause();
+    let started = tokio::time::Instant::now();
     let mut body = response.into_body();
     let mut comments = 0;
     while let Some(frame) = body.frame().await {

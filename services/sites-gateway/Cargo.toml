@@ -18,6 +18,7 @@ ratatoskr-sites-contracts.workspace   = true
 axum.workspace                        = true
 figment.workspace                     = true
 futures-util.workspace                = true
+http-body-util.workspace              = true
 hyper-util.workspace                  = true
 metrics-exporter-prometheus.workspace = true
 percent-encoding.workspace            = true
@@ -30,7 +31,6 @@ tracing.workspace                     = true
 tracing-subscriber.workspace          = true
 
 [dev-dependencies]
-http-body-util.workspace = true
 sha2.workspace           = true
 # `start_paused` for the test of a two-minute stream.
 tokio                    = { workspace = true, features = ["test-util"] }

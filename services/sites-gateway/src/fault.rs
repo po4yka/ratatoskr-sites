@@ -20,6 +20,10 @@ pub(crate) enum Fault {
     MethodNotAllowed,
     /// The `/_r/` path is not an API path of the site of the host.
     NotForwarded,
+    /// The client key is over its budget; the client may try again after the seconds.
+    RateLimited(u64),
+    /// The body of a forwarded request is larger than the cap.
+    BodyTooLarge,
     /// Edge or the sites tree cannot be read now.
     Unavailable,
 }
@@ -57,6 +61,18 @@ impl Fault {
                 "The route is not forwarded for this site.",
                 false,
             ),
+            Self::RateLimited(_) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "sites.gateway.rate_limited",
+                "Too many requests. Try again later.",
+                true,
+            ),
+            Self::BodyTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "sites.gateway.body_too_large",
+                "The request body is too large.",
+                false,
+            ),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "sites.service_unavailable",
@@ -78,6 +94,11 @@ impl IntoResponse for Fault {
         let headers = response.headers_mut();
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         crate::serve::security_headers(headers);
+        if let Self::RateLimited(seconds) = self
+            && let Ok(value) = HeaderValue::from_str(&seconds.max(1).to_string())
+        {
+            headers.insert(header::RETRY_AFTER, value);
+        }
         response
     }
 }

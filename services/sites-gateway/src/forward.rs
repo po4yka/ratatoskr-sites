@@ -99,6 +99,20 @@ pub(crate) async fn forward(gateway: &Gateway, site: &str, parts: Parts, body: B
     let Ok(uri) = format!("{}{edge_path}{query}", gateway.config.edge.url).parse::<Uri>() else {
         return Fault::NotForwarded.into_response();
     };
+    let cap = gateway.config.limits.forwarded_body_bytes;
+    let declared = parts
+        .headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok());
+    if declared.is_some_and(|length| length > cap) {
+        return Fault::BodyTooLarge.into_response();
+    }
+    // A body without a declared length stops at the cap while it streams.
+    let body = Body::new(http_body_util::Limited::new(
+        body,
+        usize::try_from(cap).unwrap_or(usize::MAX),
+    ));
     let mut request = axum::http::Request::new(body);
     *request.method_mut() = parts.method.clone();
     *request.uri_mut() = uri;
