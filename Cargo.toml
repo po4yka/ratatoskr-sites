@@ -40,6 +40,11 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 tokio = { version = "1.46", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync", "fs", "io-util"] }
 axum  = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"] }
 
+# ---- the release builder ----
+# CommonMark with tables, strikethrough, task lists and wikilinks, the version of ratatoskr-notes.
+# The release builder parses each selected note into one tree, and the privacy filter runs on it.
+pulldown-cmark = { version = "0.13.4", default-features = false }
+
 # ---- note bytes ----
 # The fresh SHA-256 of a note blob before it is used (workspace spec blob-references). RustCrypto,
 # pure Rust; sqlx already depends on it.

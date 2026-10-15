@@ -11,6 +11,7 @@ repository.workspace   = true
 ratatoskr-identifiers.workspace        = true
 ratatoskr-sites-contracts.workspace    = true
 ratatoskr-sites-publications.workspace = true
+pulldown-cmark.workspace               = true
 serde_json.workspace                   = true
 sha2.workspace                         = true
 thiserror.workspace                    = true

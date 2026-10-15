@@ -10,8 +10,8 @@
 
 ## 3. Privacy filter (workspace tasks 5.14, 5.15)
 
-- [ ] 3.1 RED: add `fixtures/privacy-vault/` and `crates/release/tests/privacy.rs` with the twelve tests of workspace task 5.14. Confirm that the canary assertion of the first fails because the builder publishes the source unfiltered.
-- [ ] 3.2 GREEN: implement the filter pass on the parsed tree before every renderer and collector, and render every selected page on every build. Verify 3.1.
+- [x] 3.1 RED: add `fixtures/privacy-vault/` and `crates/release/tests/privacy.rs` with the twelve tests of workspace task 5.14. Confirm that the canary assertion of the first fails because the builder publishes the source unfiltered.
+- [x] 3.2 GREEN: implement the filter pass on the parsed tree before every renderer and collector, and render every selected page on every build. Verify 3.1.
 
 ## 4. Sanitised HTML (workspace tasks 5.16, 5.17)
 

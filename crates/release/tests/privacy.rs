@@ -26,10 +26,11 @@ fn index() -> Result<Vec<IndexedFile>, Failure> {
     Ok(load_index(Path::new(FIXTURE))?)
 }
 
-/// The text of every note of the fixture, by the hex SHA-256 of its bytes.
-fn texts(files: &[IndexedFile]) -> Result<BTreeMap<String, String>, Failure> {
+/// The text of every note of the fixture, by the hex SHA-256 of its bytes. It reads the files of
+/// the fixture as they are on disk, so a test that moves a file in the index still finds its text.
+fn texts() -> Result<BTreeMap<String, String>, Failure> {
     let mut texts = BTreeMap::new();
-    for file in files.iter().filter(|file| file.is_markdown()) {
+    for file in index()?.iter().filter(|file| file.is_markdown()) {
         let text = std::fs::read_to_string(Path::new(FIXTURE).join("vault").join(&file.path))?;
         texts.insert(file.revision.digest.hex.as_str().to_owned(), text);
     }
@@ -53,7 +54,7 @@ fn build(files: &[IndexedFile]) -> Result<Built, Failure> {
             files,
         }],
     };
-    Ok(build_release(&site, &texts(files)?)?)
+    Ok(build_release(&site, &texts()?)?)
 }
 
 fn page<'a>(built: &'a Built, slug: &str) -> Result<&'a Page, Failure> {
