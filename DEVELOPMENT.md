@@ -32,7 +32,9 @@ docker run -d --rm --name sites-nats -p 127.0.0.1:4222:4222 nats:2.15.0-alpine -
 
 `outbox_relay.rs::outbox_relay_publishes_draft_changed` also needs Docker: it starts its own NATS
 server, from the image digest of `ci.yml`, on a free loopback port, with an administrator and only
-the `SITES` stanza of `deploy/nats/identity.conf`, and removes the container at the end.
+the `SITES` stanza of `deploy/nats/identity.conf`, and removes the container at the end. Without
+that image, set `SITES_TEST_NATS_SERVER` to a native `nats-server` (2.10 or later), and the test
+runs it as a child process with the same configuration.
 
 The consumer tests (`build_triggers.rs` and the tests after it) make their own command and event
 streams, with subjects under a prefix of their own, and the four durables on them as Edge makes

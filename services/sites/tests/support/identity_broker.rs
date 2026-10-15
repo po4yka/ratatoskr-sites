@@ -1,6 +1,9 @@
 //! A disposable NATS server whose authorization holds the vendored `SITES` stanza of
 //! `deploy/nats/identity.conf` and an administrator. It runs as a Docker container of the image
 //! that CI uses, on a free loopback port, and the container is removed when the value is dropped.
+//! On a machine without that image, `SITES_TEST_NATS_SERVER` may name a native `nats-server`
+//! binary (2.10 or later): the same configuration then runs as a child process on a free loopback
+//! port, with its `JetStream` store in the temporary directory, as Platform's broker tests allow.
 
 use std::process::Command;
 use std::time::Duration;
@@ -25,6 +28,7 @@ const STANZA: &str = concat!(
 /// One disposable server.
 pub(crate) struct IdentityBroker {
     name: String,
+    native: Option<std::process::Child>,
     /// The client URL on the host loopback.
     pub(crate) url: String,
     /// The seed of the administrator, which may do everything.
@@ -45,37 +49,65 @@ impl IdentityBroker {
             .collect::<Vec<_>>()
             .join("\n")
             .replace(PLACEHOLDER, &sites.public_key());
+        let directory = tempfile::tempdir()?;
+        let native = native_server();
+        let store = if native.is_some() {
+            directory.path().join("jetstream").display().to_string()
+        } else {
+            "/tmp/jetstream".to_owned()
+        };
         let config = format!(
-            "jetstream {{ store_dir: /tmp/jetstream }}\n\
+            "jetstream {{ store_dir: \"{store}\" }}\n\
              authorization {{\n  users = [\n    {{ nkey: {} }}\n    {stanza}\n  ]\n}}\n",
             admin.public_key()
         );
-        let directory = tempfile::tempdir()?;
         std::fs::write(directory.path().join("nats.conf"), config)?;
         std::fs::write(directory.path().join("sites.nkey"), sites.seed()?)?;
         let name = format!("ratatoskr-sites-identity-{}", Uuid::now_v7().simple());
-        let mount = format!("{}:/etc/nats-fixture:ro", directory.path().display());
-        let started = Command::new("docker")
-            .args(["run", "--detach", "--name", &name])
-            .args(["--publish", "127.0.0.1::4222", "--volume", &mount, IMAGE])
-            .args(["-c", "/etc/nats-fixture/nats.conf"])
-            .output()?;
-        if !started.status.success() {
-            return Err(format!(
-                "the disposable NATS server did not start: {}",
-                String::from_utf8_lossy(&started.stderr)
-            )
-            .into());
-        }
         let mut broker = Self {
             name,
+            native: None,
             url: String::new(),
             admin_seed: admin.seed()?,
             directory,
         };
-        broker.url = format!("nats://127.0.0.1:{}", broker.port()?);
+        if let Some(binary) = native {
+            let port = std::net::TcpListener::bind("127.0.0.1:0")?
+                .local_addr()?
+                .port();
+            let child = Command::new(binary)
+                .arg("-c")
+                .arg(broker.directory.path().join("nats.conf"))
+                .args(["-a", "127.0.0.1", "-p", &port.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()?;
+            broker.native = Some(child);
+            broker.url = format!("nats://127.0.0.1:{port}");
+        } else {
+            broker.start_container()?;
+            broker.url = format!("nats://127.0.0.1:{}", broker.port()?);
+        }
         broker.ready().await?;
         Ok(broker)
+    }
+
+    fn start_container(&self) -> Result<(), Failure> {
+        let mount = format!("{}:/etc/nats-fixture:ro", self.directory.path().display());
+        let started = Command::new("docker")
+            .args(["run", "--detach", "--name", &self.name])
+            .args(["--publish", "127.0.0.1::4222", "--volume", &mount, IMAGE])
+            .args(["-c", "/etc/nats-fixture/nats.conf"])
+            .output()?;
+        if started.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "the disposable NATS server did not start: {}",
+                String::from_utf8_lossy(&started.stderr)
+            )
+            .into())
+        }
     }
 
     /// The path of the seed file of the `SITES` identity.
@@ -117,8 +149,22 @@ impl IdentityBroker {
     }
 }
 
+/// The native `nats-server` that `SITES_TEST_NATS_SERVER` names, if any.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the variable selects the broker of a test; it is not part of the sites configuration"
+)]
+fn native_server() -> Option<std::ffi::OsString> {
+    std::env::var_os("SITES_TEST_NATS_SERVER")
+}
+
 impl Drop for IdentityBroker {
     fn drop(&mut self) {
+        if let Some(child) = self.native.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return;
+        }
         let _ = Command::new("docker")
             .args(["rm", "--force", &self.name])
             .output();
