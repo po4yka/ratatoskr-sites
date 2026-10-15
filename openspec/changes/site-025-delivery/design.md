@@ -122,4 +122,16 @@ it.
 - Every delivery answer carries `X-Content-Type-Options: nosniff`; an HTML, SVG or XML asset is
   served with `Content-Disposition: attachment`; every refusal and failure of a content route carries
   `Cache-Control: no-store`.
-- The service serves one owner and does not scope sites by owner.
+- The service serves one owner and does not scope sites by owner. One owner owns every vault
+  connection: neither this service nor the notes index route checks the owner of a connection.
+
+### 12. Second review (workspace tasks 5.44 to 5.49)
+
+- A publication that leaves the effective set of a released site, and a change or delete of a
+  released publication, write one build request of the origin `removal`, in each release mode. It
+  reads the publications of the current release that stay in the effective set, and the notes as
+  they are when it runs.
+- Each request row counts its own attempts before the build; a transient failure is reported only
+  to the operations whose row reached three attempts. A `DELETE` retry refreshes the servable set.
+  The pause seam of `Servable` exists only with the feature `test-support`.
+- The production index is the HTTP client of the notes internal index route (design 9).

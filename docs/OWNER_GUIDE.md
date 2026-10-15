@@ -12,9 +12,12 @@ guide and a spec do not agree, the spec is correct.
 
 The sites service serves one owner: the owner of the Ratatoskr installation. Edge lets only a
 primary session with the `platform.owner` grant reach the management routes, and the service does
-not scope sites by owner. Every management request can read and change every site. The service
-does not check that a publication names a vault connection of the same owner; the notes index route
-does that when it gives the files of a connection.
+not scope sites by owner. Every management request can read and change every site.
+
+One owner also owns every vault connection of the installation. Neither the sites service nor the
+notes index route checks who owns a connection: a publication can name any connection id, and the
+build reads that connection. A connection that notes does not know, or that failed or was removed,
+fails the build with `sites.connection_not_found`.
 
 ## Terms
 
@@ -154,8 +157,11 @@ So:
 - with no approval, or after a withdrawal, the set is empty and the site serves nothing.
 
 A release holds only the publications of the effective set. When you remove a publication from the
-manifest, or delete it in the web client, its pages, its assets and its search hits stop at once,
-with no build; the release document no longer lists them.
+manifest, or delete it in the web client, its pages, its assets and its search hits stop at once;
+the release document no longer lists them. The service also requests a build, in each release
+mode, so the pages that stay lose their links to the removed pages. That build reads the notes as
+they are when it runs, so in the mode `manual` it also carries the changes since the last release.
+A change of a publication that already has a release requests the same build.
 
 ## What a visitor reads
 
