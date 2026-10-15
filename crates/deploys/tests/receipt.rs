@@ -125,3 +125,40 @@ async fn a_site_mismatch_is_refused() -> Outcome {
     assert_eq!(SITE, "site-a");
     store.cleanup().await
 }
+
+#[tokio::test]
+async fn the_reserved_sdk_path_is_accepted() -> Outcome {
+    let store = Store::new(5).await?;
+    let callback = b"<!doctype html><title>sign-in</title>";
+    let bundle = Bundle::new(&commit('5')).with(".ratatoskr/sign-in/index.html", callback, false);
+    let stored = store
+        .deploys
+        .receive(&Store::site()?, std::io::Cursor::new(bundle.archive()?))
+        .await?;
+    assert!(stored.created);
+    assert_eq!(stored.file_count, 3);
+    let file = store
+        .deploys
+        .site_dir(&Store::site()?)
+        .join("bundles")
+        .join(commit('5'))
+        .join("files/.ratatoskr/sign-in/index.html");
+    assert_eq!(std::fs::read(file)?, callback, "the SDK page is stored");
+    store.cleanup().await
+}
+
+#[tokio::test]
+async fn a_path_under_the_forwarding_prefix_is_refused() -> Outcome {
+    let store = Store::new(5).await?;
+    let bundle = Bundle::new(&commit('6'));
+    let archive = bundle.archive_with(&bundle.files, |builder| {
+        append(builder, "_r/v1/sites/x/content", b"{}")
+    })?;
+    let refused = refusal(&store, archive).await?;
+    assert_eq!(
+        refused.as_ref().map(|(code, ..)| code.as_str()),
+        Some("sites.bundle.reserved_path")
+    );
+    assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
+    store.cleanup().await
+}
