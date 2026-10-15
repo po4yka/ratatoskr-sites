@@ -22,6 +22,7 @@ pub mod notes_index;
 pub mod outbox;
 pub mod release_build;
 pub mod release_read;
+pub mod search;
 pub mod servable;
 pub mod sites_blobs;
 pub mod triggers;

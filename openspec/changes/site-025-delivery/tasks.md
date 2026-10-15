@@ -36,7 +36,7 @@
 ## 7. Search (workspace tasks 5.34, 5.35)
 
 - [x] 7.1 RED: add `services/sites/tests/search.rs` with `search_never_returns_unselected_content`, `search_follows_the_current_release` and `over_long_query_is_refused_before_search`. Confirm that the status assertion of the last fails because the route does not exist.
-- [ ] 7.2 GREEN: build `sites.release_search` per release and serve search from the current release id only. Verify 7.1.
+- [x] 7.2 GREEN: build `sites.release_search` per release and serve search from the current release id only. Verify 7.1.
 
 ## 8. Owner guide (workspace task 5.36)
 

@@ -154,10 +154,14 @@ create table sites.release_sources (
 );
 
 -- The search index of a release (design D8): one row per page. Search reads only the rows of the
--- current release.
+-- current release. The title, the snippet (the start of the page text, at most 300 Unicode scalar
+-- values) and the tsvector come from the filtered page tree, so they hold only what a published
+-- page shows.
 create table sites.release_search (
     release_id  text     not null references sites.releases (release_id) on delete cascade,
     slug        text     not null,
+    title       text     not null,
+    snippet     text     not null check (char_length(snippet) <= 300),
     document    tsvector not null,
     primary key (release_id, slug)
 );

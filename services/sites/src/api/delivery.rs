@@ -10,13 +10,16 @@
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
 use ratatoskr_sites_contracts::SiteCapability;
+use serde::Deserialize;
 
 use super::ApiState;
 use super::fault::Fault;
+use crate::search;
 
 /// The `Cache-Control` of the release, page and search routes: at most 60 seconds.
 const SHORT: &str = "public, max-age=60";
@@ -170,11 +173,47 @@ pub(crate) async fn asset(
     }
 }
 
-/// `.../content/search`: search over the current release. The index of each release comes with
-/// SITE-025 task 5.35; until then the result list is empty.
+/// The parameters of the search route.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SearchQuery {
+    q: Option<String>,
+    limit: Option<String>,
+    offset: Option<String>,
+}
+
+impl SearchQuery {
+    /// The query, the limit and the offset, or `None` when one is outside its bounds: `q` of 1 to
+    /// 256 Unicode scalar values, `limit` from 1 to 50 (10 when absent) and a non-negative
+    /// `offset` (0 when absent).
+    fn bounded(&self) -> Option<(&str, u32, u32)> {
+        let q = self.q.as_deref()?;
+        if !(1..=search::MAX_QUERY_CHARS).contains(&q.chars().count()) {
+            return None;
+        }
+        let limit = match &self.limit {
+            Some(limit) => limit.parse::<u32>().ok()?,
+            None => DEFAULT_LIMIT,
+        };
+        if !(1..=search::MAX_LIMIT).contains(&limit) {
+            return None;
+        }
+        let offset = match &self.offset {
+            Some(offset) => offset.parse::<u32>().ok()?,
+            None => 0,
+        };
+        Some((q, limit, offset))
+    }
+}
+
+/// The number of results when the request names none.
+const DEFAULT_LIMIT: u32 = 10;
+
+/// `.../content/search`: search over the current release only. A parameter outside its bounds is
+/// 400 `sites.request.invalid`, and no search runs.
 pub(crate) async fn search(
     State(state): State<Arc<ApiState>>,
     Path(site): Path<String>,
+    query: Result<Query<SearchQuery>, QueryRejection>,
     headers: HeaderMap,
 ) -> Response {
     let Some(serving) = state
@@ -183,9 +222,26 @@ pub(crate) async fn search(
     else {
         return absent();
     };
-    let body = serde_json::json!({ "results": [], "has_more": false });
-    let body = serde_json::to_vec(&body).unwrap_or_default();
-    answer(&headers, &tag(&serving.release_id), SHORT, JSON, body)
+    let Ok(Query(query)) = query else {
+        return Fault::Invalid.into_response();
+    };
+    let Some((q, limit, offset)) = query.bounded() else {
+        return Fault::Invalid.into_response();
+    };
+    let etag = tag(&serving.release_id);
+    if unchanged(&headers, &etag) {
+        return answer(&headers, &etag, SHORT, JSON, Vec::new());
+    }
+    match search::search(&state.database, &serving.release_id, q, limit, offset).await {
+        Ok((results, has_more)) => {
+            let body = serde_json::json!({ "results": results, "has_more": has_more });
+            match serde_json::to_vec(&body) {
+                Ok(body) => answer(&headers, &etag, SHORT, JSON, body),
+                Err(_) => Fault::Unavailable.into_response(),
+            }
+        }
+        Err(error) => Fault::from(error).into_response(),
+    }
 }
 
 /// The bytes of the blob `digest` of the sites blob root. A missing or unreadable blob is logged.

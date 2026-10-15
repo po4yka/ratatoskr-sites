@@ -432,6 +432,9 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .await
             .map_err(BuildFailure::Database)?;
         }
+        crate::search::index(&mut transaction, release_id, &built.pages)
+            .await
+            .map_err(BuildFailure::Database)?;
         for asset in &built.release.assets {
             sqlx::query(
                 "insert into sites.release_assets (release_id, digest, media_type, length_bytes) \
