@@ -253,3 +253,20 @@ fn html_over_one_mebibyte_fails_the_build() -> Outcome {
     );
     Ok(())
 }
+
+#[test]
+fn heading_ids_are_lower_case_ascii() -> Outcome {
+    let page = page_of("# Caf\u{e9} au lait!\n\nSee [[#Caf\u{e9} au lait!]].\n")?;
+    assert!(
+        page.html.contains("<h1 id=\"caf-au-lait\">"),
+        "the id has only lower-case ASCII letters, digits and -: {}",
+        page.html
+    );
+    let ast = serde_json::to_value(&page.ast)?;
+    assert_eq!(
+        ast.pointer("/children/0/anchor"),
+        Some(&Value::from("caf-au-lait")),
+        "the anchor of the page tree is the same id"
+    );
+    Ok(())
+}
