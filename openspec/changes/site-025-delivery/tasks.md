@@ -78,3 +78,11 @@
 - [x] 12.7 RED (5.59): add `notes_index_http.rs::other_not_found_is_unavailable` and `redirect_is_unavailable`, and `services/sites/tests/notes_config.rs::notes_base_url_is_a_loopback_origin`. Confirm that each fails on its assertion, or say which one pins behaviour that exists.
 - [x] 12.8 GREEN (5.60): a 404 is `ConnectionNotFound` only with the body code `notes.connection.not_found`; `notes.base_url` must be an `http://` URL of a loopback host with no path and no query; the servable set is written before a removal request. Verify 12.7.
 - [x] 12.9 (5.61) Correct design 12 (a removal build reads the files of the current release), and state that a wider frontmatter allowlist applies to a removal build only for the keys that the stored files hold. No test: documentation.
+
+## 13. Fourth review (workspace tasks 5.62 to 5.66)
+
+- [x] 13.1 RED (5.62): add `removal_build.rs::flagged_notes_stay_published_after_builds_from_the_release`: a flagged manual publication publishes a note with `publish: "site-r"` and a note with the tag `#public` (included as `Public`); both stay published after a removal build and after an automatic build that reads the manual publication from the release. Confirm that the slug assertion fails because the build from the release selects again on the projection, which lost both inputs.
+- [ ] 13.2 GREEN (5.63): store in each source row the publications that selected it, and build a publication from the release from exactly its rows, without selecting again; keep in the projection only what rendering reads. Verify 13.1.
+- [ ] 13.3 RED (5.64): add comment canaries to `release_sources.rs` (an alias and a heading subpath of a link inside a `%%` comment). Confirm that the canary assertion fails because the projection keeps every link whose target is published.
+- [ ] 13.4 GREEN (5.65): store only the links and embeds that the rendered page resolved, without `display_text`. Verify 13.3.
+- [ ] 13.5 (5.66) Correct the comment on the removal requests that wait, design 14 for manual publications, and document a note that a manual and an automatic publication both select. No test: documentation.

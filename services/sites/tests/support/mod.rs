@@ -308,6 +308,29 @@ impl Fixture {
         Ok(())
     }
 
+    /// Add the note with the text `text` and the index entry `entry` (the members of
+    /// `IndexedFile` without `revision`) to the connection.
+    pub(crate) fn add_indexed(&self, entry: serde_json::Value, text: &str) -> Result<(), Failure> {
+        let revision = revision_of(text.as_bytes(), "text/markdown")?;
+        store(
+            self.notes_root.path(),
+            text.as_bytes(),
+            revision.digest.hex.as_str(),
+        )?;
+        let mut entry = entry;
+        entry
+            .as_object_mut()
+            .ok_or("an index entry is an object")?
+            .insert("revision".to_owned(), serde_json::to_value(&revision)?);
+        let file: IndexedFile = serde_json::from_value(entry)?;
+        self.index
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?
+            .push(file);
+        Ok(())
+    }
+
     /// Add the file `path` with the bytes `bytes` and the media type `media_type`, which no note
     /// links to, to the connection.
     pub(crate) fn add_file(

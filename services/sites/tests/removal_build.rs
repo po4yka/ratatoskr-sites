@@ -266,3 +266,118 @@ async fn removal_during_a_build_is_not_lost() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+/// The slugs of the current release document.
+async fn released_slugs(fixture: &Fixture) -> Result<Vec<String>, Failure> {
+    let (_, document) =
+        ratatoskr_sites::release_read::current_release(&fixture.database.database, SITE)
+            .await?
+            .ok_or("the site has a release")?;
+    let release: ratatoskr_sites_contracts::Release = serde_json::from_slice(&document)?;
+    Ok(release
+        .pages
+        .iter()
+        .map(|page| page.slug.as_str().to_owned())
+        .collect())
+}
+
+/// Wait until the worker has made a release after `first` and has no request left.
+async fn next_release(fixture: &Fixture, first: i64) -> Outcome {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if fixture.release_count().await? > first && requests(fixture).await? == 0 {
+                return Ok::<(), Failure>(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .map_err(|_| "no new release")?
+}
+
+#[tokio::test]
+async fn flagged_notes_stay_published_after_builds_from_the_release() -> Outcome {
+    let fixture = two_publications().await?;
+    // pub-f, manual and flagged, reads the folder flag/: a note with `publish: "site-r"` and a
+    // note with the tag #public, which pub-f includes as `Public`.
+    fixture.add_indexed(
+        json!({ "path": "flag/string.md", "frontmatter": { "publish": SITE } }),
+        "---\npublish: site-r\n---\nThe page that names the site.\n",
+    )?;
+    fixture.add_indexed(
+        json!({ "path": "flag/tagged.md", "tags": ["#public"] }),
+        "The page with the tag #public.\n",
+    )?;
+    sqlx::query(
+        "update sites.publications set excluded_folders = '{private,flag}' \
+         where publication_id = 'pub-r'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    sqlx::query(
+        "insert into sites.publications (site_id, publication_id, connection_id, mode, \
+         release_mode, included_folders, included_tags, created_at) \
+         values ($1, 'pub-f', $2, 'flagged', 'manual', '{flag}', '{Public}', now())",
+    )
+    .bind(SITE)
+    .bind(fixture.index.connection())
+    .execute(fixture.database.pool())
+    .await?;
+    let three = TestManifest::of(
+        "r.example.test",
+        &["pub-r", "pub-s", "pub-f"],
+        &CAPABILITIES,
+    );
+    fixture.approve_directly(&three).await?;
+    fixture.builder().build(&request(None)).await?;
+    let flagged = ["flag/string".to_owned(), "flag/tagged".to_owned()];
+    let slugs = released_slugs(&fixture).await?;
+    assert!(
+        flagged.iter().all(|slug| slugs.contains(slug)),
+        "the command build publishes both flagged notes: {slugs:?}"
+    );
+
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+    let api = fixture.api_of(&running.shared).await?;
+    let first = fixture.release_count().await?;
+    let narrower = TestManifest::of("r.example.test", &["pub-r", "pub-f"], &CAPABILITIES);
+    assert_eq!(
+        submit(&api, fixture.owner, &narrower).await?.status,
+        StatusCode::OK
+    );
+    next_release(&fixture, first).await?;
+    let slugs = released_slugs(&fixture).await?;
+    assert!(
+        flagged.iter().all(|slug| slugs.contains(slug)),
+        "the removal build keeps both flagged notes: {slugs:?}"
+    );
+
+    // pub-r becomes automatic and a.md changes: the build reads pub-f from the release.
+    sqlx::query(
+        "update sites.publications set release_mode = 'automatic' where publication_id = 'pub-r'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    fixture.change("a.md", "---\npublish: true\n---\nThe note a, changed.\n")?;
+    let second = fixture.release_count().await?;
+    sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at) values ($1, $2, 'file_change', null, now())",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(SITE)
+    .execute(fixture.database.pool())
+    .await?;
+    running.shared.servable.wake(SITE);
+    next_release(&fixture, second).await?;
+    let slugs = released_slugs(&fixture).await?;
+    assert!(
+        flagged.iter().all(|slug| slugs.contains(slug)),
+        "a build that reads the manual publication from the release keeps both: {slugs:?}"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
