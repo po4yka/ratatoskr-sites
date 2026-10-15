@@ -31,6 +31,17 @@ pub(crate) struct StubIndex {
     files: Arc<Mutex<Vec<IndexedFile>>>,
 }
 
+impl StubIndex {
+    /// The files of the stub as they are now.
+    pub(crate) fn files_now(&self) -> Result<Vec<IndexedFile>, Failure> {
+        Ok(self
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?
+            .clone())
+    }
+}
+
 impl NotesIndex for StubIndex {
     async fn files(&self, connection_id: Uuid) -> Result<Vec<IndexedFile>, IndexUnavailable> {
         if connection_id != self.connection {
