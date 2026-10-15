@@ -26,6 +26,12 @@ pub const DEFAULT_API_PORT: u16 = 8100;
 /// `ratatoskr-workspace/docs/DEPLOYMENT_TARGET.md`; host only.
 pub const DEFAULT_ADMIN_PORT: u16 = 9472;
 
+/// The inbox prefix of every NATS connection of this service. The `SITES` stanza of the deployed
+/// ACL (`deploy/nats/identity.conf`) lets the identity subscribe to `_INBOX_sites.>` only, so a
+/// reply under another prefix never arrives. The workspace check `bus_acl.rs` reads this literal
+/// and its use in `custom_inbox_prefix`.
+pub const INBOX_PREFIX: &str = "_INBOX_sites";
+
 /// Everything a Sites process must know before it serves.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,12 +131,10 @@ pub struct BusConfig {
 }
 
 impl BusConfig {
-    /// The inbox prefix of every NATS connection of this service. The `SITES` stanza of the
-    /// deployed ACL (`deploy/nats/identity.conf`) lets the identity subscribe to `_INBOX_sites.>`
-    /// only, so a reply under another prefix never arrives.
+    /// The inbox prefix of every NATS connection of this service: [`INBOX_PREFIX`].
     #[must_use]
     pub const fn inbox_prefix(&self) -> &'static str {
-        "_INBOX_sites"
+        INBOX_PREFIX
     }
 }
 

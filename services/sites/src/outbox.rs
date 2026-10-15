@@ -4,7 +4,7 @@
 //! The relay publishes each row of the outbox in the order of the outbox, unchanged, on the subject
 //! of the row, with the event id as `Nats-Msg-Id`, so that `JetStream` drops a second copy. It marks
 //! a row published only after the `PubAck`, so a stop between the two publishes the row again, and
-//! a consumer sees one copy. The connection uses the inbox prefix of [`BusConfig::inbox_prefix`]:
+//! a consumer sees one copy. The connection uses the inbox prefix [`INBOX_PREFIX`]:
 //! the deployed ACL lets the `SITES` identity subscribe to `_INBOX_sites.>` only, and the `PubAck`
 //! of a publish arrives there.
 
@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::config::BusConfig;
+use crate::config::{BusConfig, INBOX_PREFIX};
 
 /// How many rows one read of the outbox takes.
 const BATCH: i64 = 64;
@@ -135,7 +135,7 @@ impl OutboxRelay {
             None => async_nats::ConnectOptions::new(),
         };
         let client = options
-            .custom_inbox_prefix(self.bus.inbox_prefix())
+            .custom_inbox_prefix(INBOX_PREFIX)
             .connection_timeout(CONNECT_TIMEOUT)
             .connect(self.url.as_str())
             .await
