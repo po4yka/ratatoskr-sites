@@ -13,10 +13,13 @@
 //! └── previous -> bundles/<c1>  replaced by rename(2)
 //! ```
 
+mod receipt;
+
 use std::path::PathBuf;
 
 use ratatoskr_sites_contracts::{DeployStored, SiteId};
 use ratatoskr_sites_persistence::Database;
+use tokio_util::io::SyncIoBridge;
 
 /// Why a deploy or an activation was refused or failed. Each variant has a stable code
 /// ([`DeployError::code`]) and an HTTP status ([`DeployError::status`]).
@@ -105,6 +108,7 @@ pub struct Limits {
 /// The deploy store under the sites tree `root`.
 #[derive(Debug, Clone)]
 pub struct DeployStore {
+    #[expect(dead_code, reason = "the approval check of task 4.6 reads it")]
     database: Database,
     root: PathBuf,
     limits: Limits,
@@ -127,22 +131,43 @@ impl DeployStore {
         self.root.join(site.as_str())
     }
 
-    /// Receive the bundle archive `body` for `site`.
+    /// Receive the bundle archive `body` for `site`: stream it into a staging directory with every
+    /// check of the receipt, and store it as `bundles/<commit>` only when every check passed.
     ///
     /// # Errors
     ///
     /// [`DeployError`] when the bundle is refused or cannot be stored.
-    #[expect(
-        clippy::unused_async,
-        reason = "the stub of task 4.1 receives nothing yet"
-    )]
     pub async fn receive<R>(&self, site: &SiteId, body: R) -> Result<DeployStored, DeployError>
     where
         R: tokio::io::AsyncRead + Send + Unpin + 'static,
     {
-        let _ = (&self.database, self.limits, site, body);
-        Err(DeployError::Invalid(
-            "the receipt does not exist".to_owned(),
-        ))
+        let site_dir = self.site_dir(site);
+        let owned = site.clone();
+        let max_bytes = self.limits.max_bundle_bytes;
+        let reader = SyncIoBridge::new(body);
+        let stored = tokio::task::spawn_blocking(move || {
+            receipt::receive(&site_dir, &owned, max_bytes, reader)
+        })
+        .await
+        .map_err(|_| DeployError::Storage(std::io::Error::other("the receipt stopped")))??;
+        answer(stored)
     }
+}
+
+/// The answer of a receipt that stored or found `stored`.
+fn answer(stored: receipt::Stored) -> Result<DeployStored, DeployError> {
+    let manifest = stored.manifest;
+    let file_count = u32::try_from(manifest.files.len())
+        .map_err(|_| DeployError::Invalid("the bundle lists too many files".to_owned()))?;
+    let size_bytes = manifest
+        .files
+        .iter()
+        .fold(0_u64, |total, file| total.saturating_add(file.size_bytes));
+    Ok(DeployStored {
+        site_id: manifest.site_id,
+        commit: manifest.commit,
+        file_count,
+        size_bytes,
+        created: stored.created,
+    })
 }
