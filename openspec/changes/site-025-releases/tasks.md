@@ -5,8 +5,8 @@
 
 ## 2. Slugs (workspace tasks 5.12, 5.13)
 
-- [ ] 2.1 RED: add `crates/publications/tests/slug.rs` with the three tests of workspace task 5.12 and `frontmatter_slug_outside_the_grammar_fails`. Confirm that the class assertion of `colliding_paths_fail_the_build` fails because the build succeeds with one page.
-- [ ] 2.2 GREEN: implement slug derivation, the collision check and `sites.slug_invalid`. Verify 2.1.
+- [x] 2.1 RED: add `crates/publications/tests/slug.rs` with the three tests of workspace task 5.12 and `frontmatter_slug_outside_the_grammar_fails`. Confirm that the class assertion of `colliding_paths_fail_the_build` fails because the build succeeds with one page.
+- [x] 2.2 GREEN: implement slug derivation, the collision check and `sites.slug_invalid`. Verify 2.1.
 
 ## 3. Privacy filter (workspace tasks 5.14, 5.15)
 
