@@ -48,6 +48,10 @@ pub struct BuildJob {
     /// The operations of `operation_ids` that the worker tries again after a transient failure:
     /// such a failure is not reported to them, and they wait for the next try.
     pub retried: Vec<Uuid>,
+    /// `true` when only removal requests are among the requests: the build reads the indexed files
+    /// that the current release was built from, never the notes index, so it publishes no note
+    /// change that the owner did not release.
+    pub from_release: bool,
 }
 
 impl From<&BuildRequest> for BuildJob {
@@ -57,6 +61,7 @@ impl From<&BuildRequest> for BuildJob {
             operation_ids: request.operation_id.into_iter().collect(),
             explicit: true,
             retried: Vec::new(),
+            from_release: false,
         }
     }
 }
@@ -200,7 +205,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
-        let outcome = self.build_site(&job.site_id, owner, job.explicit).await;
+        let outcome = self.build_site(job, owner).await;
         let transient = outcome.as_ref().is_err_and(BuildFailure::retryable);
         for &operation_id in &job.operation_ids {
             if transient && job.retried.contains(&operation_id) {
@@ -232,12 +237,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
     /// Build `site_id`. A build that is not `explicit` reads only the publications that the current
     /// release contains, so the first release of a publication always comes from a command
     /// (workspace design D6).
-    async fn build_site(
-        &self,
-        site_id: &str,
-        owner: Uuid,
-        explicit: bool,
-    ) -> Result<BuildOutcome, BuildFailure> {
+    async fn build_site(&self, job: &BuildJob, owner: Uuid) -> Result<BuildOutcome, BuildFailure> {
         type Row = (
             String,
             Uuid,
@@ -247,6 +247,8 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             Vec<String>,
             Vec<String>,
         );
+        let site_id = job.site_id.as_str();
+        let explicit = job.explicit;
         let rows: Vec<Row> = sqlx::query_as(
             "select publication_id, connection_id, mode, included_folders, excluded_folders, \
              included_tags, frontmatter_allow from sites.publications where site_id = $1 \
@@ -302,8 +304,35 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             // The current release keeps the pages of the suspended publication.
             return Err(BuildFailure::PublicationSuspended);
         }
-        let mut indexes: BTreeMap<Uuid, Vec<IndexedFile>> = BTreeMap::new();
-        for row in &rows {
+        let indexes = self.indexes(job, &rows).await?;
+        let site = site_input(site_id, &rows, &indexes)?;
+        let publications: Vec<(Uuid, String)> = rows
+            .iter()
+            .map(|row| (row.connection_id, row.publication_id.clone()))
+            .collect();
+        let mut provenance = Provenance::of(&publications, &site).map_err(BuildFailure::Build)?;
+        let built = self.render(&site).await?;
+        provenance.add_attachments(&publications, &site, &built);
+        self.store(site_id, owner, &built, &provenance).await
+    }
+
+    /// The files of each vault connection of `rows`: from the notes index, or, for a build from the
+    /// release, the files that the current release was built from.
+    async fn indexes(
+        &self,
+        job: &BuildJob,
+        rows: &[PublicationRow],
+    ) -> Result<BTreeMap<Uuid, Vec<IndexedFile>>, BuildFailure> {
+        let mut indexes = if job.from_release {
+            self.released_files(&job.site_id).await?
+        } else {
+            BTreeMap::new()
+        };
+        for row in rows {
+            if job.from_release {
+                indexes.entry(row.connection_id).or_default();
+                continue;
+            }
             if let std::collections::btree_map::Entry::Vacant(vacant) =
                 indexes.entry(row.connection_id)
             {
@@ -318,14 +347,31 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 vacant.insert(files);
             }
         }
-        let site = site_input(site_id, &rows, &indexes)?;
-        let publications: Vec<(Uuid, String)> = rows
-            .iter()
-            .map(|row| (row.connection_id, row.publication_id.clone()))
-            .collect();
-        let provenance = Provenance::of(&publications, &site).map_err(BuildFailure::Build)?;
-        let built = self.render(&site).await?;
-        self.store(site_id, owner, &built, &provenance).await
+        Ok(indexes)
+    }
+
+    /// The indexed files that the current release of `site_id` was built from, by vault connection:
+    /// each note and attachment that it publishes, as the notes index gave it then.
+    async fn released_files(
+        &self,
+        site_id: &str,
+    ) -> Result<BTreeMap<Uuid, Vec<IndexedFile>>, BuildFailure> {
+        let rows: Vec<(Uuid, serde_json::Value)> = sqlx::query_as(
+            "select s.connection_id, s.file from sites.release_sources s \
+             join sites.current_releases c on c.release_id = s.release_id \
+             where c.site_id = $1 order by s.connection_id, s.path",
+        )
+        .bind(site_id)
+        .fetch_all(self.database.pool())
+        .await
+        .map_err(BuildFailure::Database)?;
+        let mut files: BTreeMap<Uuid, Vec<IndexedFile>> = BTreeMap::new();
+        for (connection_id, file) in rows {
+            let file: IndexedFile =
+                serde_json::from_value(file).map_err(|_| BuildFailure::PublicationInvalid)?;
+            files.entry(connection_id).or_default().push(file);
+        }
+        Ok(files)
     }
 
     /// Read every selected note with the bound of the reader, and build the release.
@@ -470,18 +516,10 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .await
             .map_err(BuildFailure::Database)?;
         }
-        for (connection_id, path) in &provenance.sources {
-            sqlx::query(
-                "insert into sites.release_sources (release_id, connection_id, path) \
-                 values ($1, $2, $3) on conflict do nothing",
-            )
-            .bind(release_id)
-            .bind(connection_id)
-            .bind(path)
-            .execute(&mut *transaction)
+        provenance
+            .write(&mut transaction, release_id)
             .await
             .map_err(BuildFailure::Database)?;
-        }
         sqlx::query(
             "insert into sites.current_releases (site_id, release_id, made_current_at) \
              values ($1, $2, now()) on conflict (site_id) do update \

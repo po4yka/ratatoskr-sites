@@ -193,6 +193,7 @@ impl<B: SiteBuilds> BuildWorker<B> {
                 site_id: site_id.to_owned(),
                 operation_ids: rows.iter().filter_map(|row| row.2).collect(),
                 explicit: rows.iter().any(|row| row.1 == "command"),
+                from_release: rows.iter().all(|row| row.1 == "removal"),
                 retried: rows
                     .iter()
                     .filter(|row| row.3 < MAX_ATTEMPTS)

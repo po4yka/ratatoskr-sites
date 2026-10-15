@@ -7,15 +7,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ratatoskr_sites_publications::{BuildError, assign_slugs, select};
+use ratatoskr_sites_publications::{BuildError, IndexedFile, assign_slugs, select};
 use ratatoskr_sites_release::{Built, SiteInput, selected_notes};
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// The vault paths of the notes of a release and the publications of its pages.
 #[derive(Debug, Default)]
 pub(crate) struct Provenance {
-    /// The vault path of each published note, by vault connection.
-    pub(crate) sources: Vec<(Uuid, String)>,
+    /// The indexed file of each published note and attachment, by vault connection.
+    pub(crate) sources: Vec<(Uuid, IndexedFile)>,
     /// The publications of each page, by slug, in ascending order.
     pages: BTreeMap<String, Vec<String>>,
 }
@@ -35,12 +36,24 @@ impl Provenance {
         let mut by_path: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for ((connection_id, publication_id), input) in publications.iter().zip(&site.publications)
         {
-            for path in select(&input.publication, input.files) {
+            let chosen = select(&input.publication, input.files);
+            for file in input
+                .files
+                .iter()
+                .filter(|file| chosen.contains(&file.path))
+            {
                 by_path
-                    .entry(path.clone())
+                    .entry(file.path.clone())
                     .or_default()
                     .insert(publication_id.clone());
-                sources.push((*connection_id, path));
+                let known = sources
+                    .iter()
+                    .any(|(connection, source): &(Uuid, IndexedFile)| {
+                        connection == connection_id && source.path == file.path
+                    });
+                if !known {
+                    sources.push((*connection_id, file.clone()));
+                }
             }
         }
         let pages = assign_slugs(&selected_notes(site))?
@@ -51,6 +64,58 @@ impl Provenance {
             })
             .collect();
         Ok(Self { sources, pages })
+    }
+
+    /// Add to the sources the attachments whose bytes `built` publishes as assets.
+    pub(crate) fn add_attachments(
+        &mut self,
+        publications: &[(Uuid, String)],
+        site: &SiteInput<'_>,
+        built: &Built,
+    ) {
+        let assets: BTreeSet<&str> = built
+            .assets
+            .iter()
+            .map(|asset| asset.digest.hex.as_str())
+            .collect();
+        for ((connection_id, _), input) in publications.iter().zip(&site.publications) {
+            for file in input.files.iter().filter(|file| {
+                !file.is_markdown() && assets.contains(file.revision.digest.hex.as_str())
+            }) {
+                let known = self.sources.iter().any(|(connection, source)| {
+                    connection == connection_id && source.path == file.path
+                });
+                if !known {
+                    self.sources.push((*connection_id, file.clone()));
+                }
+            }
+        }
+    }
+
+    /// Write the sources of the release `release_id`: each published note and attachment, with
+    /// the indexed file that the build read.
+    ///
+    /// # Errors
+    ///
+    /// The query error of a row that cannot be written.
+    pub(crate) async fn write(
+        &self,
+        connection: &mut PgConnection,
+        release_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        for (connection_id, file) in &self.sources {
+            sqlx::query(
+                "insert into sites.release_sources (release_id, connection_id, path, file) \
+                 values ($1, $2, $3, $4) on conflict do nothing",
+            )
+            .bind(release_id)
+            .bind(connection_id)
+            .bind(&file.path)
+            .bind(sqlx::types::Json(file))
+            .execute(&mut *connection)
+            .await?;
+        }
+        Ok(())
     }
 
     /// The publications of the page `slug`.

@@ -99,7 +99,7 @@ have `publish: true` on many notes; nothing goes to a site until you request the
 
 The service makes one build of a site at a time. The changes that arrive while a build runs make
 one more build after it, not one build for each change. A build whose content did not change makes
-no new release. A change of an attachment does not request a build; request one yourself.
+no new release. A change of an attachment that a release publishes also requests a build.
 
 ### A disconnected vault
 
@@ -160,8 +160,8 @@ A release holds only the publications of the effective set. When you remove a pu
 manifest, or delete it in the web client, its pages, its assets and its search hits stop at once;
 the release document no longer lists them. The service also requests a build, in each release
 mode, so the pages that stay lose their links to the removed pages. That build reads the notes as
-they are when it runs, so in the mode `manual` it also carries the changes since the last release.
-A change of a publication that already has a release requests the same build.
+the current release holds them, not as they are now, so it publishes no change that you did not
+release. A change of a publication that already has a release requests the same build.
 
 ## What a visitor reads
 

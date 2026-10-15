@@ -57,3 +57,14 @@ release that stay in the effective set.
 
 - **WHEN** the owner removes a publication from the manifest of a site whose publications are in the release mode `manual`
 - **THEN** a build runs, and the new release holds no slug or title of the removed publication in the pages that stay, verified by `services/sites/tests/removal_build.rs::removed_publication_is_built_out_of_the_kept_pages`
+
+### Requirement: A removal build releases no new content
+
+A build that only removal requests asked for SHALL read the indexed files that the current release
+was built from, and SHALL NOT read the notes index. It publishes no note change that the owner did
+not release.
+
+#### Scenario: A manual site with an unreleased change loses a publication
+
+- **WHEN** the owner changes a note of a manual publication after the release, and then removes another publication
+- **THEN** the release of the removal build holds the released text of the changed note, verified by `services/sites/tests/removal_build.rs::removal_build_keeps_the_released_text`

@@ -35,9 +35,9 @@ release that contains a publication always comes from a command (workspace desig
 For each automatic, active publication over the connection of the change whose site has a current
 release that contains the publication: the change requests a build when the publication selects
 the file now (from the notes index of the connection) or selected it in the current release. The
-second test reads `sites.release_sources`, the vault paths of the notes that a release publishes,
-which the release transaction writes. It holds only paths of published notes. A change of an
-attachment requests no build; the owner requests one.
+second test reads `sites.release_sources`, the notes and attachments that a release publishes,
+which the release transaction writes. It holds only published files, so a change of a published
+attachment requests a build too.
 
 ### 4. A suspended publication fails the build
 
@@ -135,3 +135,13 @@ it.
   to the operations whose row reached three attempts. A `DELETE` retry refreshes the servable set.
   The pause seam of `Servable` exists only with the feature `test-support`.
 - The production index is the HTTP client of the notes internal index route (design 9).
+
+### 13. A removal build releases no new content (workspace tasks 5.51, 5.52)
+
+`sites.release_sources` keeps, for each note and attachment that a release publishes, the
+`IndexedFile` that the build read: its frontmatter, tags, headings, links and its revision
+`BlobRef`. A build that only removal requests asked for reads these files of the current release
+instead of the notes index, applies the publications that stay, and reads the bytes of each
+revision from the notes blob root, as every build does. So in each release mode it publishes no
+note change that the owner did not release. A removal request that joins a command or a file change
+makes an ordinary build, because the command or the automatic mode releases new content anyway.

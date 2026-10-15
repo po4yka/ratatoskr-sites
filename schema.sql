@@ -150,14 +150,19 @@ create table sites.release_assets (
     primary key (release_id, digest)
 );
 
--- The vault path of each note that a release publishes, by vault connection. A change of one of
+-- Each note and each attachment that a release publishes, by vault connection. A change of one of
 -- these files requests a build of an automatic publication (workspace spec `site-publications`,
--- "A build starts only from a request or from a selected file change"). Only a published note is
--- here, so the table keeps the rule that no column holds the path of an unpublished file.
+-- "A build starts only from a request or from a selected file change"), and a removal build reads
+-- the files from here. Only a published file is here, so the table keeps the rule that no column
+-- holds the path of an unpublished file.
 create table sites.release_sources (
     release_id     text not null references sites.releases (release_id) on delete cascade,
     connection_id  uuid not null,
     path           text not null,
+    -- The file as the notes index gave it to the build (`IndexedFile`, with its revision `BlobRef`):
+    -- a removal build rebuilds from these files and never reads the notes index, so it publishes
+    -- no note change that the owner did not release.
+    file           jsonb not null,
     primary key (release_id, connection_id, path)
 );
 

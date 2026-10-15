@@ -10,7 +10,7 @@ use ratatoskr_identifiers::BlobRef;
 use serde_json::{Map, Value};
 
 /// One file of a vault connection.
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexedFile {
     /// The vault path in NFC, with `/` between folders, for example `blog/hello.md`.
@@ -54,7 +54,7 @@ impl IndexedFile {
 }
 
 /// One heading of a note.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexedHeading {
     /// 1 to 6.
@@ -64,7 +64,7 @@ pub struct IndexedHeading {
 }
 
 /// How a link is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkForm {
     /// `[[target]]`, `[[target|alias]]`, `![[target]]`.
@@ -74,7 +74,7 @@ pub enum LinkForm {
 }
 
 /// One link or embed of a note, with the file that the notes resolver found for it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexedLink {
     /// The target with its subpath, in NFC, as the note writes it: `Beta#Section One`.

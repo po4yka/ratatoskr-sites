@@ -65,4 +65,4 @@
 ## 11. A removal build releases no new content (workspace tasks 5.51, 5.52)
 
 - [x] 11.1 RED (5.51): add `removal_build.rs::removal_build_keeps_the_released_text`: in the release mode `manual`, the owner changes a note after the release and removes another publication; the removal release holds the released text of the changed note. Confirm that the text assertion fails because the removal build reads the notes index as it is now.
-- [ ] 11.2 GREEN (5.52): store in `sites.release_sources` the indexed file (with its revision) of each note and each attachment that a release publishes, and build a release that only removal requests asked for from that snapshot of the current release, minus the removed publications, without the notes index. Verify 11.1.
+- [x] 11.2 GREEN (5.52): store in `sites.release_sources` the indexed file (with its revision) of each note and each attachment that a release publishes, and build a release that only removal requests asked for from that snapshot of the current release, minus the removed publications, without the notes index. Verify 11.1.
