@@ -162,8 +162,14 @@ the release document no longer lists them. The service also requests a build, in
 mode, so the pages that stay lose their links to the removed pages. That build reads the notes as
 the current release holds them, not as they are now, so it publishes no change that you did not
 release. A change of a publication that already has a release requests the same build. A field
-that you add to the frontmatter allowlist appears only with the next build that you request, or that
-a change of an automatic publication requests.
+that you add to the frontmatter allowlist of a manual publication appears only with the next build
+that you request; for an automatic publication it also appears with the next change of one of its
+notes.
+
+When two publications of a site select the same note, the note is published once, from the
+publication whose id comes first. If one is manual and one is automatic, give them folders that do
+not overlap: otherwise a change of the automatic one can publish the note as it is now, when the
+automatic publication comes first.
 
 ## What a visitor reads
 

@@ -159,6 +159,21 @@ makes an ordinary build, because the command or the automatic mode releases new 
 - A 404 of the notes index is a missing connection only with the code `notes.connection.not_found`.
   `RATATOSKR__NOTES__BASE_URL` is a loopback `http://` origin with no path and no query.
 - A build from the release reads only the frontmatter keys that the stored files hold. When the
-  owner widens the frontmatter allowlist of a publication, a removal build cannot add the new keys:
-  the stored files do not hold them, so the change cannot expose a key that the release did not
-  publish. The new keys appear with the next build that a command or an automatic change requests.
+  owner widens the frontmatter allowlist of a publication, a build from the release cannot add the
+  new keys: the stored files do not hold them, so the change cannot expose a key that the release
+  did not publish. For an automatic publication the new keys appear with the next build that reads
+  it from the notes index (a command or a change of one of its notes); for a manual publication
+  only with a build command, because every other build reads it from the release.
+
+### 15. Fourth review (workspace tasks 5.62 to 5.66)
+
+- Each source row holds the publications that selected it. A publication that a build reads from
+  the release takes exactly its rows and the attachments of the release, and is not selected again,
+  so a `publish` value or a tag that the projection does not keep cannot drop a note. The projection
+  keeps only what rendering reads.
+- Each note in the sources keeps only the links and embeds that its rendered page resolved, without
+  display text; a link inside a comment never reaches them.
+- A note that two publications of a site select, for example a manual and an automatic one over the
+  same folder, is taken once: from the first of them in the order of the publication ids. In a build
+  that no command requested, the served text of that note is the released text when the manual
+  publication comes first, and the text of the notes index when the automatic one comes first.

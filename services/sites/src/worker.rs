@@ -68,9 +68,11 @@ impl BuildQueue {
 /// Request a build of `site_id` because a publication left its effective set or changed (workspace
 /// spec `site-manifest`, "a removal stops at once"): the links, backlinks and titles of the removed
 /// pages leave the pages that stay. It is written only for a site with a current release, in each
-/// release mode, and at most one waits at a time; a request that a running build took does not
-/// count, so a removal during a build makes one more build. A removal build reads only the publications of
-/// the current release that stay in the effective set. Returns whether a request was written.
+/// release mode, and only when no removal request waits that no build has taken yet; a request that
+/// a running build took does not count, so a removal during a build makes one more build. A retry
+/// after a transient failure releases the rows it keeps, so two removal requests can wait at once;
+/// the next build takes both. A removal build reads only the publications of the current release
+/// that stay in the effective set. Returns whether a request was written.
 ///
 /// # Errors
 ///
