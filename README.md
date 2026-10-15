@@ -5,9 +5,10 @@ Obsidian vault that the owner publishes, builds an immutable release from them a
 rules, and serves the current release of each approved site through the Content Delivery API. Each
 site is an independent UI in its own repository, and reads a release with `@ratatoskr/site-sdk`.
 
-> **Status:** scaffolding. The service starts, applies the `sites` schema, and serves its operator
-> plane. Publications, the release builder, the manifest and the Content Delivery API are planned
-> in the workspace change `add-site-publications` (SITE-025), group 5.
+> **Status:** in development. The service selects the notes of each publication, builds an
+> immutable release through the privacy filter, makes it current in one transaction and announces
+> it. The manifest, the build triggers and the Content Delivery API are planned in the workspace
+> change `add-site-publications` (SITE-025), group 5.
 
 > [!IMPORTANT]
 > **Ratatoskr is in development.** No database holds data that has to survive a schema change.
@@ -53,8 +54,9 @@ The domain API has no routes yet.
 - [x] Service skeleton: strict configuration, logging, operator plane, embedded schema, CI gate.
 - [x] Deployment profile, database role and the read group of the note bytes (tasks 5.2 to 5.7).
 - [x] Verified reads of note bytes (tasks 5.8 and 5.9): `notes_blobs::NotesBlobReader`.
-- [ ] Selection, slugs, privacy filter and sanitised HTML (tasks 5.10 to 5.17).
-- [ ] Releases, the current-release switch and the build triggers (tasks 5.18 to 5.25).
+- [x] Selection, slugs, privacy filter and sanitised HTML (tasks 5.10 to 5.17).
+- [x] Releases, the release id and the current-release switch with its event (tasks 5.18 to 5.21).
+- [ ] Build triggers and the suspension of a disconnected vault (tasks 5.22 to 5.25).
 - [ ] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
 - [ ] Owner guide (task 5.36).
 

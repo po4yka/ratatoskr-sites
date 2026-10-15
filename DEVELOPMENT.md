@@ -16,7 +16,8 @@ The tests need PostgreSQL 17. `compose.yaml` starts it:
 docker compose up -d --wait
 ```
 
-The tests create one database per test and drop it at the end. They read
+The tests of `services/sites` that build a release (`release_build.rs`, `release_switch.rs`)
+create one database per test and drop it at the end. They read
 `SITES_TEST_DATABASE_URL`, and the default is `postgres://sites:sites@127.0.0.1:5432/sites`, the
 database that `compose.yaml` starts. If the postgres of another Ratatoskr repository uses port
 5432, stop it first or set `SITES_TEST_DATABASE_URL`.
@@ -68,7 +69,7 @@ validates the environment and binds nothing (exit 0 valid, exit 78 invalid).
 | `RATATOSKR__DATABASE__ACQUIRE_TIMEOUT_SECONDS` | `5` | 1 to 60. |
 | `RATATOSKR__ADMIN__BIND` | `127.0.0.1:9472` | The operator listener. |
 | `RATATOSKR__API__LISTEN_ADDRESS` | `127.0.0.1:8100` | The domain API listener. It must differ from the operator listener. |
-| `RATATOSKR__BUS__URL` | none | The NATS server, for example `nats://127.0.0.1:4222`. Without it the service connects to no bus. |
+| `RATATOSKR__BUS__URL` | none | The NATS server, for example `nats://127.0.0.1:4222`. Without it no outbox relay runs, and the events stay in the outbox. |
 | `RATATOSKR__BUS__NKEY_SEED_PATH` | none | The nkey seed of the `SITES` identity, `/etc/ratatoskr/sites.nkey` on the host. Every connection uses the inbox prefix `_INBOX_sites`. |
 | `RATATOSKR__SHUTDOWN__GRACE_SECONDS` | `10` | How long in-flight requests may take after SIGTERM, 1 to 60. |
 | `RATATOSKR__TELEMETRY__LOG_FORMAT` | `text` | `text` or `json`. |
@@ -84,6 +85,15 @@ change edits `schema.sql` in place, and the next test database has it. A databas
 part of `schema.sql` does not get that part. Drop its `sites` schema (`drop schema sites cascade`),
 and the next start of the service makes it again from `schema.sql` (AGENTS.md, Development status:
 no migrations).
+
+## Fixtures
+
+`fixtures/selection-vault/` and `fixtures/privacy-vault/` are vault connections: `vault/` holds the
+files, and `index.json` holds what the notes internal index route gives for each file, without the
+revision. The loader of `ratatoskr-sites-publications` (feature `test-support`) computes each
+revision from the bytes. Every string with `zq7` in the privacy vault comes from a file that its
+publication does not select, and no byte of a release may contain it. A new filter rule adds its
+canary location there.
 
 ## Deploy files
 

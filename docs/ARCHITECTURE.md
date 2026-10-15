@@ -28,7 +28,14 @@
 | Package | Path | Holds |
 |---|---|---|
 | `ratatoskr-sites-persistence` | `crates/persistence` | The pool, the embedded schema, the disposable test database. |
-| `ratatoskr-sites` | `services/sites` | Configuration, the process lifecycle, the operator plane and the domain routes. |
+| `ratatoskr-sites-publications` | `crates/publications` | The shape of the notes index, the selection of a publication, the slug of a page. |
+| `ratatoskr-sites-release` | `crates/release` | The comment pass, the parser, the privacy filter, the page tree and HTML renderers, the HTML allowlist and the release document. It reads no file and no database. |
+| `ratatoskr-sites` | `services/sites` | Configuration, the process lifecycle, the operator plane, the release build, the release read, the outbox relay and the domain routes. |
+
+The release builder runs in a fixed order: frontmatter and comments are cut from the text, the text
+is parsed into one tree, the privacy filter runs on that tree, and only the filtered tree reaches
+the renderers and the collectors of links and assets (workspace design D5). The release id is the
+SHA-256 of the RFC 8785 form of the release document (design D4).
 
 ## 3. Storage
 
