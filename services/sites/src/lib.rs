@@ -14,6 +14,8 @@
 pub mod admin;
 pub mod config;
 pub mod notes_blobs;
+pub mod notes_index;
+pub mod release_build;
 
 use std::process::ExitCode;
 use std::sync::Arc;

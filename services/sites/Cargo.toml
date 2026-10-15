@@ -15,6 +15,8 @@ path = "src/main.rs"
 ratatoskr-sites-persistence.workspace = true
 ratatoskr-identifiers.workspace       = true
 ratatoskr-sites-contracts.workspace   = true
+ratatoskr-sites-publications.workspace = true
+ratatoskr-sites-release.workspace     = true
 axum.workspace                        = true
 figment.workspace                     = true
 metrics-exporter-prometheus.workspace = true
@@ -22,13 +24,17 @@ secrecy.workspace                     = true
 serde.workspace                       = true
 serde_json.workspace                  = true
 sha2.workspace                        = true
+sqlx.workspace                        = true
 thiserror.workspace                   = true
 tokio.workspace                       = true
 tracing.workspace                     = true
 tracing-subscriber.workspace          = true
+uuid.workspace                        = true
 
 [dev-dependencies]
-tempfile.workspace = true
+ratatoskr-sites-persistence  = { workspace = true, features = ["test-support"] }
+ratatoskr-sites-publications = { workspace = true, features = ["test-support"] }
+tempfile.workspace           = true
 
 [lints]
 workspace = true

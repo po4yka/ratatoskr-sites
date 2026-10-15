@@ -1494,15 +1494,19 @@ dependencies = [
  "ratatoskr-identifiers",
  "ratatoskr-sites-contracts",
  "ratatoskr-sites-persistence",
+ "ratatoskr-sites-publications",
+ "ratatoskr-sites-release",
  "secrecy",
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
  "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
