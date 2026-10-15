@@ -26,7 +26,7 @@
 ## 5. Route classes (workspace tasks 5.30, 5.31)
 
 - [x] 5.1 RED: add `services/sites/tests/route_classes.rs::anonymous_claim_is_refused_outside_content`, which sends an anonymous claim to `GET /v1/sites/{site}/releases` and asserts the unauthenticated error and a body that holds no release data. Confirm that the status assertion fails because the service answers 200 with the release list.
-- [ ] 5.2 GREEN: refuse an anonymous claim, and a request without the owner claim, on every route outside `content/`. Verify 5.1.
+- [x] 5.2 GREEN: refuse an anonymous claim, and a request without the owner claim, on every route outside `content/`. Verify 5.1.
 
 ## 6. Delivery (workspace tasks 5.32, 5.33)
 

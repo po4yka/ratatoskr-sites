@@ -11,7 +11,9 @@ mod publications;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use ratatoskr_sites_persistence::Database;
 
@@ -60,7 +62,8 @@ impl ApiState {
     }
 }
 
-/// The domain router. A path that no route holds is 404 `sites.route_not_found`.
+/// The domain router. A path that no route holds is 404 `sites.route_not_found`. Every route
+/// outside `content/` needs the owner claim ([`require_owner`]).
 pub fn router(state: Arc<ApiState>) -> Router {
     Router::new()
         .route("/v1/sites", get(manage::list_sites))
@@ -80,10 +83,20 @@ pub fn router(state: Arc<ApiState>) -> Router {
             "/internal/sites/{site}/manifest",
             get(manage::internal_manifest),
         )
+        .route_layer(middleware::from_fn(require_owner))
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(MAX_MANIFEST_BYTES))
         .with_state(state)
+}
+
+/// The second line of ADR-0017: a request with Edge's anonymous claim, or without the owner claim,
+/// is 401 `sites.request.unauthenticated` and reaches no handler.
+async fn require_owner(request: Request, next: Next) -> Response {
+    if manage::owner_of(request.headers()).is_none() {
+        return Fault::Unauthenticated.into_response();
+    }
+    next.run(request).await
 }
 
 async fn route_not_found() -> Fault {
