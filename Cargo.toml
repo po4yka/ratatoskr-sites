@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/deploys",
     "crates/manifest",
     "crates/persistence",
     "crates/publications",
@@ -17,6 +18,7 @@ repository   = "https://github.com/po4yka/ratatoskr-sites"
 
 [workspace.dependencies]
 # ---- in-repo ----
+ratatoskr-sites-deploys      = { version = "0.1.0", path = "crates/deploys" }
 ratatoskr-sites-manifest     = { version = "0.1.0", path = "crates/manifest" }
 ratatoskr-sites-persistence  = { version = "0.1.0", path = "crates/persistence" }
 ratatoskr-sites-publications = { version = "0.1.0", path = "crates/publications" }
@@ -79,6 +81,12 @@ html5ever = "0.40"
 # The RFC 8785 (JCS) form of the release document, whose SHA-256 is the release id (workspace
 # design D4).
 serde_jcs = "0.2"
+
+# ---- site bundles ----
+# The bundle archive of a deploy (workspace spec `site-bundles`): an uncompressed tar with
+# `ratatoskr-bundle.json` at its root. The tar crate reads GNU and PAX long names, which a bundle
+# path of up to 1024 bytes needs. No default features: the receipt reads no extended attribute.
+tar = { version = "0.4", default-features = false }
 
 # ---- note bytes ----
 # The fresh SHA-256 of a note blob before it is used (workspace spec blob-references). RustCrypto,
