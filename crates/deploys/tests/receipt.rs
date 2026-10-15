@@ -177,3 +177,31 @@ async fn a_deploy_to_an_unapproved_site_is_refused() -> Outcome {
     assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
     store.cleanup().await
 }
+
+#[tokio::test]
+async fn a_second_deploy_of_the_same_commit_returns_the_first() -> Outcome {
+    let store = Store::new(5).await?;
+    let bundle = Bundle::new(&commit('8'));
+    let site = Store::site()?;
+    let first = store
+        .deploys
+        .receive(&site, std::io::Cursor::new(bundle.archive()?))
+        .await?;
+    let second = store
+        .deploys
+        .receive(&site, std::io::Cursor::new(bundle.archive()?))
+        .await
+        .map_err(|error| error.code().to_owned());
+    assert_eq!(
+        second
+            .as_ref()
+            .map(|stored| (stored.commit.clone(), stored.created)),
+        Ok((first.commit.clone(), false)),
+        "the second call returns the stored deploy"
+    );
+    let bundles: Vec<String> = std::fs::read_dir(store.deploys.site_dir(&site).join("bundles"))?
+        .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<_, _>>()?;
+    assert_eq!(bundles, vec![commit('8')], "one directory for the commit");
+    store.cleanup().await
+}
