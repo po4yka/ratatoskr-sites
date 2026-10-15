@@ -45,7 +45,7 @@
 ## 9. Review corrections (workspace tasks 5.37 to 5.42)
 
 - [x] 9.1 RED (5.37): add `services/sites/tests/servable_race.rs::withdrawal_is_not_overwritten_by_a_stale_refresh`, which holds a refresh between its read and its write (the pause seam of `Servable`), withdraws the approval and refreshes the site, then lets the first refresh write. Confirm that the servable assertion fails because the stale refresh writes the approved state back.
-- [ ] 9.2 GREEN (5.38): hold one lock across the read and the write of every refresh. Verify 9.1.
+- [x] 9.2 GREEN (5.38): hold one lock across the read and the write of every refresh. Verify 9.1.
 - [ ] 9.3 RED (5.39): add `delivery.rs::removed_publication_stops_at_once`: a publication removed from the approved manifest, and another removed with `DELETE`, leave no page, asset, release entry or search hit, with no build. Confirm that the status assertion fails because the page of the removed publication answers 200.
 - [ ] 9.4 GREEN (5.40): record the publications of each page, asset and search row of a release, keep the effective publications of each servable site, and filter the release document, the pages, the assets and the search results by them; a publication removed with `DELETE` leaves the effective set. Verify 9.3.
 - [ ] 9.5 RED (5.41): add `build_triggers.rs::transient_failure_is_retried` (L1), `build_triggers.rs::redelivered_command_builds_once` (L2), `delivery.rs::active_content_is_never_sniffed` (L5) and `delivery.rs::refusals_of_content_routes_are_not_stored` (L7), and set `page_of_earlier_release_is_not_found` back to `publish: false` (L9). Confirm that each fails on its assertion.

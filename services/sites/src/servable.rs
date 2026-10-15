@@ -24,6 +24,9 @@ pub struct Serving {
 #[derive(Debug, Default)]
 pub struct Servable {
     sites: RwLock<HashMap<String, Serving>>,
+    /// Held across the read and the write of each refresh, so a refresh that read the database
+    /// earlier cannot write after one that read it later.
+    refreshing: tokio::sync::Mutex<()>,
     pause: Mutex<Option<RefreshPause>>,
 }
 
@@ -65,12 +68,14 @@ impl Servable {
         pause
     }
 
-    /// Read `site_id` again from the database.
+    /// Read `site_id` again from the database. Refreshes run one at a time: the read and the write
+    /// of one refresh are never split by another refresh, so the last refresh to read writes last.
     ///
     /// # Errors
     ///
     /// The query error when the site cannot be read; the set keeps what it had.
     pub async fn refresh(&self, database: &Database, site_id: &str) -> Result<(), sqlx::Error> {
+        let _one_at_a_time = self.refreshing.lock().await;
         let effective = effective_set(database, site_id).await?;
         let release: Option<String> =
             sqlx::query_scalar("select release_id from sites.current_releases where site_id = $1")
