@@ -211,3 +211,37 @@ async fn retention_keeps_current_and_previous() -> Outcome {
 fn commit_two() -> String {
     commit('2')
 }
+
+/// Review M4: a deploy that was stored after the last activation is waiting to be activated, so an
+/// activation of another deploy never removes it, even with a retention of two.
+#[tokio::test]
+async fn retention_never_removes_a_deploy_stored_after_the_last_activation() -> Outcome {
+    let store = Store::new(2).await?;
+    let (a, b, c) = (commit('a'), commit('b'), commit('c'));
+    deploy(&store, &a).await?;
+    assert_eq!(activate(&store, &a).await?, Ok((a.clone(), None)));
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    deploy(&store, &b).await?;
+    assert_eq!(
+        activate(&store, &b).await?,
+        Ok((b.clone(), Some(a.clone())))
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    // The owner uploads c ahead and rolls back to a before c is activated.
+    deploy(&store, &c).await?;
+    assert_eq!(
+        activate(&store, &a).await?,
+        Ok((a.clone(), Some(b.clone())))
+    );
+    let bundles = store.deploys.site_dir(&Store::site()?).join("bundles");
+    assert!(
+        bundles.join(&c).is_dir(),
+        "the deploy stored after the last activation is kept"
+    );
+    assert_eq!(
+        activate(&store, &c).await?,
+        Ok((c, Some(a))),
+        "and can be activated"
+    );
+    store.cleanup().await
+}
