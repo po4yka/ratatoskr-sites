@@ -45,6 +45,9 @@ pub struct BuildJob {
     pub operation_ids: Vec<Uuid>,
     /// `true` when a build command is among the requests, `false` when only file changes are.
     pub explicit: bool,
+    /// `false` while the worker tries a build that failed for a transient reason again: such a
+    /// failure is then not reported, and the operations wait for the next try.
+    pub final_attempt: bool,
 }
 
 impl From<&BuildRequest> for BuildJob {
@@ -53,6 +56,7 @@ impl From<&BuildRequest> for BuildJob {
             site_id: request.site_id.clone(),
             operation_ids: request.operation_id.into_iter().collect(),
             explicit: true,
+            final_attempt: true,
         }
     }
 }
@@ -125,7 +129,8 @@ impl BuildFailure {
     }
 
     /// Whether a new request for the same content can succeed.
-    const fn retryable(&self) -> bool {
+    #[must_use]
+    pub const fn retryable(&self) -> bool {
         matches!(
             self,
             Self::IndexUnavailable | Self::Store(_) | Self::Database(_) | Self::Note(_)
@@ -191,6 +196,12 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
         let outcome = self.build_site(&job.site_id, owner, job.explicit).await;
+        if let Err(failure) = &outcome
+            && failure.retryable()
+            && !job.final_attempt
+        {
+            return outcome;
+        }
         for &operation_id in &job.operation_ids {
             if let Err(error) = report(&self.database, owner, operation_id, &outcome).await {
                 // The outcome of the build stays the answer; Platform's stale-operation reaper

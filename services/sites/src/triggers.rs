@@ -97,37 +97,52 @@ impl<I: NotesIndex + 'static> Triggers<I> {
         }
     }
 
-    /// A build command of Edge: one request row, keyed by the command id, so that a redelivery
-    /// adds nothing. A command for a site that does not exist fails its operation at once.
+    /// A build command of Edge: one request row, keyed by the command id. The inbox records the
+    /// command, so a redelivery after the build adds nothing. A command for a site that does not
+    /// exist fails its operation at once.
     async fn command(&self, payload: &[u8]) -> Result<Disposition, ApplyError> {
         let Some((command_id, owner, request)) = parse_command(payload) else {
             return Ok(Disposition::Reject);
         };
         let site_id = request.site_id.as_str();
         let operation_id = request.operation_id.0;
-        let inserted = sqlx::query(
-            "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
-             requested_at) select $1, site_id, 'command', $2, now() from sites.sites \
-             where site_id = $3 on conflict (request_id) do nothing",
+        let known: bool =
+            sqlx::query_scalar("select exists (select 1 from sites.sites where site_id = $1)")
+                .bind(site_id)
+                .fetch_one(self.database.pool())
+                .await?;
+        let mut transaction = self.database.pool().begin().await?;
+        let fresh = sqlx::query(
+            "insert into sites.inbox (message_id, subject, consumed_at) values ($1, $2, now()) \
+             on conflict (message_id) do nothing",
         )
         .bind(command_id)
-        .bind(operation_id)
-        .bind(site_id)
-        .execute(self.database.pool())
+        .bind("cmd.sites.release.build_requested.v1")
+        .execute(&mut *transaction)
         .await?;
-        if inserted.rows_affected() == 0 {
-            let known: bool =
-                sqlx::query_scalar("select exists (select 1 from sites.sites where site_id = $1)")
-                    .bind(site_id)
-                    .fetch_one(self.database.pool())
-                    .await?;
-            if !known {
-                let outcome = Err(BuildFailure::SiteNotFound);
-                report(&self.database, owner, operation_id, &outcome).await?;
-                return Ok(Disposition::Done);
-            }
+        if fresh.rows_affected() == 0 {
+            // A redelivery of a command that was applied: its build ran or waits already.
+            return Ok(Disposition::Done);
         }
-        self.queue.wake(site_id);
+        if known {
+            sqlx::query(
+                "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+                 requested_at) values ($1, $2, 'command', $3, now()) \
+                 on conflict (request_id) do nothing",
+            )
+            .bind(command_id)
+            .bind(site_id)
+            .bind(operation_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        if known {
+            self.queue.wake(site_id);
+        } else {
+            let outcome = Err(BuildFailure::SiteNotFound);
+            report(&self.database, owner, operation_id, &outcome).await?;
+        }
         Ok(Disposition::Done)
     }
 

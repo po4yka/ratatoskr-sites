@@ -231,6 +231,12 @@ impl Fixture {
             .find(|file| file.path == path)
             .ok_or("the fixture holds the file")?;
         file.revision = revision_of(text.as_bytes(), "text/markdown")?;
+        // The notes index reads the frontmatter of the new revision; the stub reads `publish`.
+        if let Some(publish) = publish_of(text) {
+            file.frontmatter
+                .get_or_insert_with(serde_json::Map::new)
+                .insert("publish".to_owned(), serde_json::Value::Bool(publish));
+        }
         store(
             self.notes_root.path(),
             text.as_bytes(),
@@ -329,6 +335,16 @@ impl Fixture {
     pub(crate) async fn cleanup(self) -> Result<(), Failure> {
         Ok(self.database.cleanup().await?)
     }
+}
+
+/// The value of `publish: true` or `publish: false` in the frontmatter of `text`.
+fn publish_of(text: &str) -> Option<bool> {
+    let frontmatter = text.strip_prefix("---\n")?.split("\n---").next()?;
+    frontmatter.lines().find_map(|line| match line.trim() {
+        "publish: true" => Some(true),
+        "publish: false" => Some(false),
+        _ => None,
+    })
 }
 
 pub(crate) fn request(operation_id: Option<Uuid>) -> BuildRequest {

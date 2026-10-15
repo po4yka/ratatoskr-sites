@@ -95,6 +95,9 @@ create table sites.build_requests (
     origin        text        not null check (origin in ('command', 'file_change')),
     operation_id  uuid,
     requested_at  timestamptz not null,
+    -- The builds of this request that failed for a transient reason; the worker tries at most
+    -- three times before it reports the failure.
+    attempts      integer     not null default 0 check (attempts >= 0),
     check ((origin = 'command') = (operation_id is not null))
 );
 

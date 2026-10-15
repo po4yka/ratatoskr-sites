@@ -38,13 +38,32 @@ pub(crate) fn absent() -> Response {
     not_stored(Fault::SiteNotFound)
 }
 
-/// `fault` with `Cache-Control: no-store`.
+/// `fault` with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`: every refusal
+/// and every failure of a content route.
 fn not_stored(fault: Fault) -> Response {
     let mut response = fault.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
+}
+
+/// Whether a browser runs script in a document of `media_type`: HTML, SVG and XML. Such an asset
+/// is served as a download, never as a document of the delivery origin.
+fn is_active(media_type: &str) -> bool {
+    let essence = media_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    matches!(
+        essence.as_str(),
+        "text/html" | "image/svg+xml" | "text/xml" | "application/xml" | "application/xhtml+xml"
+    ) || essence.ends_with("+xml")
 }
 
 /// The `ETag` of the asset `value`. The release, page and search routes use [`Serving::tag`].
@@ -81,8 +100,9 @@ fn answer(
         .header(header::ETAG, etag)
         .header(header::CACHE_CONTROL, cache)
         .header(header::CONTENT_TYPE, media_type)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .body(body);
-    built.unwrap_or_else(|_| Fault::Unavailable.into_response())
+    built.unwrap_or_else(|_| not_stored(Fault::Unavailable))
 }
 
 /// `.../content/release`: the current `sites/release.v1` document, with only the pages, assets,
@@ -102,7 +122,7 @@ pub(crate) async fn release(
     match served_release(&state, &serving).await {
         Ok(Some(document)) => answer(&headers, &serving.tag, SHORT, JSON, document),
         Ok(None) => absent(),
-        Err(error) => Fault::from(error).into_response(),
+        Err(error) => not_stored(Fault::from(error)),
     }
 }
 
@@ -213,14 +233,14 @@ pub(crate) async fn page(
     let digest = match digest {
         Ok(Some(digest)) => digest,
         Ok(None) => return not_stored(Fault::PageNotFound),
-        Err(error) => return Fault::from(error).into_response(),
+        Err(error) => return not_stored(Fault::from(error)),
     };
     if unchanged(&headers, &etag) {
         return answer(&headers, &etag, SHORT, JSON, Vec::new());
     }
     match read_blob(&state, &digest).await {
         Some(bytes) => answer(&headers, &etag, SHORT, JSON, bytes),
-        None => Fault::Unavailable.into_response(),
+        None => not_stored(Fault::Unavailable),
     }
 }
 
@@ -246,16 +266,23 @@ pub(crate) async fn asset(
     let media_type = match media_type {
         Ok(Some(media_type)) => media_type,
         Ok(None) => return not_stored(Fault::AssetNotFound),
-        Err(error) => return Fault::from(error).into_response(),
+        Err(error) => return not_stored(Fault::from(error)),
     };
     let etag = tag(&digest);
     if unchanged(&headers, &etag) {
         return answer(&headers, &etag, LONG, &media_type, Vec::new());
     }
-    match read_blob(&state, &digest).await {
+    let mut response = match read_blob(&state, &digest).await {
         Some(bytes) => answer(&headers, &etag, LONG, &media_type, bytes),
-        None => Fault::Unavailable.into_response(),
+        None => return not_stored(Fault::Unavailable),
+    };
+    if is_active(&media_type) {
+        response.headers_mut().insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_static("attachment"),
+        );
     }
+    response
 }
 
 /// The parameters of the search route.
@@ -308,10 +335,10 @@ pub(crate) async fn search(
         return absent();
     };
     let Ok(Query(query)) = query else {
-        return Fault::Invalid.into_response();
+        return not_stored(Fault::Invalid);
     };
     let Some((q, limit, offset)) = query.bounded() else {
-        return Fault::Invalid.into_response();
+        return not_stored(Fault::Invalid);
     };
     let etag = serving.tag.clone();
     if unchanged(&headers, &etag) {
@@ -322,10 +349,10 @@ pub(crate) async fn search(
             let body = serde_json::json!({ "results": results, "has_more": has_more });
             match serde_json::to_vec(&body) {
                 Ok(body) => answer(&headers, &etag, SHORT, JSON, body),
-                Err(_) => Fault::Unavailable.into_response(),
+                Err(_) => not_stored(Fault::Unavailable),
             }
         }
-        Err(error) => Fault::from(error).into_response(),
+        Err(error) => not_stored(Fault::from(error)),
     }
 }
 
