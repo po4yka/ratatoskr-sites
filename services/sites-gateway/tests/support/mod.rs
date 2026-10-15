@@ -3,6 +3,8 @@
 
 #![allow(dead_code, reason = "each test file uses a part of the support")]
 
+pub(crate) mod edge;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
