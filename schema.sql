@@ -207,6 +207,17 @@ create table sites.current_releases (
 -- The transactional outbox: `evt.sites.release.published.v1` and the operation reports. The relay
 -- publishes the rows in the order of `position`, each on its subject, and marks a row published
 -- only after the bus acknowledged it.
+-- The opaque reference of a note in the publications of a site, for its owner session (SITE-027).
+-- It names a note; it never decides the scope, which the service decides on each request from the
+-- publications and the notes index.
+create table sites.source_refs (
+    source_ref     text not null primary key check (source_ref ~ '^[A-Za-z0-9_-]{1,128}$'),
+    site_id        text not null references sites.sites (site_id) on delete cascade,
+    connection_id  uuid not null,
+    path           text not null,
+    unique (site_id, connection_id, path)
+);
+
 create table sites.outbox (
     event_id      uuid        primary key,
     position      bigint      generated always as identity,

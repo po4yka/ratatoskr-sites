@@ -7,6 +7,8 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use ratatoskr_sites::api::{ApiState, router};
+use ratatoskr_sites::notes_blobs::NotesBlobReader;
+use ratatoskr_sites::scope::NotesAccess;
 use ratatoskr_sites::servable::Servable;
 use ratatoskr_sites::sites_blobs::SitesBlobs;
 use ratatoskr_sites::triggers::Shared;
@@ -114,7 +116,11 @@ impl Fixture {
 
     /// The domain router over `shared`, the state of a running service.
     pub(crate) async fn api_of(&self, shared: &Shared) -> Result<Router, Failure> {
-        let state = ApiState::load(shared, SitesBlobs::new(self.sites_root.path())).await?;
+        let notes = NotesAccess::new(
+            self.index.clone(),
+            NotesBlobReader::new(self.notes_root.path()),
+        );
+        let state = ApiState::load(shared, SitesBlobs::new(self.sites_root.path()), notes).await?;
         Ok(router(state))
     }
 }

@@ -23,6 +23,7 @@ pub mod outbox;
 mod provenance;
 pub mod release_build;
 pub mod release_read;
+pub mod scope;
 pub mod search;
 pub mod servable;
 pub mod sites_blobs;
@@ -55,6 +56,7 @@ const NOTES_INDEX_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 const NOTES_INDEX_MAX_BYTES: usize = 32 * 1024 * 1024;
 use crate::outbox::OutboxRelay;
 use crate::release_build::ReleaseBuilder;
+use crate::scope::NotesAccess;
 use crate::servable::Servable;
 use crate::sites_blobs::SitesBlobs;
 use crate::triggers::{Consumers, Shared};
@@ -156,7 +158,12 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
             .await
             .map_err(|error| format!("the servable sites could not be read: {error}"))?,
     };
-    let api_state = ApiState::load(&shared, SitesBlobs::new(&config.blobs.root))
+    let notes = NotesAccess::new(
+        notes_index(config),
+        NotesBlobReader::new(&config.blobs.notes_root)
+            .with_max_bytes(release_build::MAX_NOTE_BYTES),
+    );
+    let api_state = ApiState::load(&shared, SitesBlobs::new(&config.blobs.root), notes)
         .await
         .map_err(|error| format!("the domain state could not be read: {error}"))?;
     let runtime = Arc::new(RuntimeState::new(database.clone()));
@@ -225,11 +232,7 @@ fn start_pipeline(
     url: &str,
     stop: &tokio_util::sync::CancellationToken,
 ) -> Vec<tokio::task::JoinHandle<()>> {
-    let index = HttpNotesIndex::new(
-        &config.notes.base_url,
-        NOTES_INDEX_TIMEOUT,
-        NOTES_INDEX_MAX_BYTES,
-    );
+    let index = notes_index(config);
     let builder = ReleaseBuilder::new(
         shared.database.clone(),
         index.clone(),
@@ -255,6 +258,15 @@ fn start_pipeline(
             ],
         },
         stop,
+    )
+}
+
+/// The client of the notes internal index route at `RATATOSKR__NOTES__BASE_URL`.
+fn notes_index(config: &SitesConfig) -> HttpNotesIndex {
+    HttpNotesIndex::new(
+        &config.notes.base_url,
+        NOTES_INDEX_TIMEOUT,
+        NOTES_INDEX_MAX_BYTES,
     )
 }
 

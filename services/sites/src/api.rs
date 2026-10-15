@@ -5,6 +5,7 @@
 //! sends, and this listener is reachable only on loopback.
 
 mod delivery;
+mod drafts;
 mod fault;
 mod manage;
 mod publications;
@@ -18,6 +19,7 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use ratatoskr_sites_persistence::Database;
 
+use crate::scope::NotesAccess;
 use crate::servable::Servable;
 use crate::sites_blobs::SitesBlobs;
 use crate::triggers::Shared;
@@ -32,10 +34,12 @@ pub struct ApiState {
     database: Database,
     blobs: SitesBlobs,
     servable: Arc<Servable>,
+    notes: NotesAccess,
 }
 
 impl ApiState {
-    /// The state of the routes over `shared` and the sites blob root `blobs`.
+    /// The state of the routes over `shared`, the sites blob root `blobs` and the notes that the
+    /// routes of the site owner session read, `notes`.
     ///
     /// # Errors
     ///
@@ -44,11 +48,16 @@ impl ApiState {
         clippy::unused_async,
         reason = "the state reads nothing yet; a caller awaits it like the other loads"
     )]
-    pub async fn load(shared: &Shared, blobs: SitesBlobs) -> Result<Arc<Self>, sqlx::Error> {
+    pub async fn load(
+        shared: &Shared,
+        blobs: SitesBlobs,
+        notes: NotesAccess,
+    ) -> Result<Arc<Self>, sqlx::Error> {
         Ok(Arc::new(Self {
             database: shared.database.clone(),
             blobs,
             servable: Arc::clone(&shared.servable),
+            notes,
         }))
     }
 
@@ -81,6 +90,18 @@ pub fn router(state: Arc<ApiState>) -> Router {
             "/internal/sites/{site}/manifest",
             get(manage::internal_manifest),
         )
+        // The routes of the site owner session (SITE-027): the loopback scope query and the
+        // drafts.
+        .route(
+            "/internal/sites/{site}/sources/{source_ref}",
+            get(drafts::internal_source),
+        )
+        .route("/internal/sites/{site}/scope", get(drafts::internal_scope))
+        .route(
+            "/v1/sites/{site}/drafts/sources/{source_ref}",
+            get(drafts::source),
+        )
+        .route("/v1/sites/{site}/drafts/pages/{*slug}", get(drafts::page))
         .route_layer(middleware::from_fn(require_owner))
         // The Content Delivery API: Edge's anonymous claim, no owner claim.
         .route("/v1/sites/{site}/content/release", get(delivery::release))
