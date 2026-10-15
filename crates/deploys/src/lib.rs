@@ -108,7 +108,6 @@ pub struct Limits {
 /// The deploy store under the sites tree `root`.
 #[derive(Debug, Clone)]
 pub struct DeployStore {
-    #[expect(dead_code, reason = "the approval check of task 4.6 reads it")]
     database: Database,
     root: PathBuf,
     limits: Limits,
@@ -131,6 +130,23 @@ impl DeployStore {
         self.root.join(site.as_str())
     }
 
+    /// Refuse a site that the approval projection of SITE-025 does not mark as approved, as an
+    /// unknown site.
+    async fn require_approved(&self, site: &SiteId) -> Result<(), DeployError> {
+        let approved: bool = sqlx::query_scalar(
+            "select exists (select 1 from sites.approval_projection \
+             where site_id = $1 and state = 'approved')",
+        )
+        .bind(site.as_str())
+        .fetch_one(self.database.pool())
+        .await?;
+        if approved {
+            Ok(())
+        } else {
+            Err(DeployError::SiteNotFound)
+        }
+    }
+
     /// Receive the bundle archive `body` for `site`: stream it into a staging directory with every
     /// check of the receipt, and store it as `bundles/<commit>` only when every check passed.
     ///
@@ -141,6 +157,7 @@ impl DeployStore {
     where
         R: tokio::io::AsyncRead + Send + Unpin + 'static,
     {
+        self.require_approved(site).await?;
         let site_dir = self.site_dir(site);
         let owned = site.clone();
         let max_bytes = self.limits.max_bundle_bytes;
