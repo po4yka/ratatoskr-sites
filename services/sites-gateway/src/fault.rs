@@ -14,6 +14,10 @@ pub(crate) enum Fault {
     UnknownHost,
     /// The site of the host has no current deploy.
     NoDeploy,
+    /// The current deploy has no file for the path.
+    PageNotFound,
+    /// A static path was asked with another method than `GET` or `HEAD`.
+    MethodNotAllowed,
     /// Edge or the sites tree cannot be read now.
     Unavailable,
 }
@@ -31,6 +35,18 @@ impl Fault {
                 StatusCode::NOT_FOUND,
                 "sites.gateway.no_deploy",
                 "The site has no deploy yet.",
+                false,
+            ),
+            Self::PageNotFound => (
+                StatusCode::NOT_FOUND,
+                "sites.page_not_found",
+                "The site has no such page.",
+                false,
+            ),
+            Self::MethodNotAllowed => (
+                StatusCode::METHOD_NOT_ALLOWED,
+                "sites.request.method_not_allowed",
+                "The path accepts GET and HEAD only.",
                 false,
             ),
             Self::Unavailable => (

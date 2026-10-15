@@ -87,3 +87,11 @@ reads one small `site.json` per site.
 `sites.gateway.route_not_forwarded`. The gateway also answers a missing file with
 `sites.page_not_found`, a write method on a static path with `sites.request.method_not_allowed`,
 and proposes `sites.gateway.rate_limited` (429) and `sites.gateway.body_too_large` (413).
+
+### 12. Every folder path may serve its `index.html`
+
+The spec names the folder index for `/.ratatoskr/` only. A static site generator such as Astro
+writes `about/index.html` for `/about/`, so the gateway resolves a folder path to its `index.html`
+for every path, before the previous deploy and the entry fallback. Only a listed file is served, so
+this widens nothing outside the manifest. The gateway keeps the manifests of the deploys that
+requests resolved, at most 64, because a stored deploy never changes.

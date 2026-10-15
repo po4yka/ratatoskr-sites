@@ -89,6 +89,10 @@ serde_jcs = "0.2"
 # path of up to 1024 bytes needs. No default features: the receipt reads no extended attribute.
 tar = { version = "0.4", default-features = false }
 
+# ---- the sites gateway ----
+# The percent-decoding of a request path. The version that Cargo.lock already holds.
+percent-encoding = "2.3"
+
 # ---- note bytes ----
 # The fresh SHA-256 of a note blob before it is used (workspace spec blob-references). RustCrypto,
 # pure Rust; sqlx already depends on it.

@@ -42,6 +42,7 @@ const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 pub struct Gateway {
     config: GatewayConfig,
     table: RwLock<Arc<HostTable>>,
+    manifests: serve::Manifests,
 }
 
 impl Gateway {
@@ -52,6 +53,7 @@ impl Gateway {
         Arc::new(Self {
             config,
             table: RwLock::new(Arc::new(table)),
+            manifests: serve::Manifests::default(),
         })
     }
 
