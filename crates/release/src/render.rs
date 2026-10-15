@@ -107,7 +107,7 @@ fn reference_node(node: &Node) -> Option<PageNode> {
             anchor: anchor.clone(),
             children: to_ast(children),
         },
-        Node::PageEmbed { slug, anchor } => PageNode::Embed {
+        Node::PageEmbed { slug, anchor, .. } => PageNode::Embed {
             target: EmbedTarget::Page {
                 slug: slug.clone(),
                 anchor: anchor.clone(),
@@ -145,8 +145,19 @@ fn anchor_of_heading(children: &[Node]) -> Option<Anchor> {
     heading_anchor(&text_of(children)).or_else(|| Anchor::parse("section").ok())
 }
 
-/// The HTML body of `nodes`. Raw HTML of the note is written as it is; the HTML allowlist runs on
-/// the whole body after this.
+/// The HTML body of a page: each top-level block is followed by a line break, as in the contract
+/// fixtures of `sites/page.v1`.
+pub(crate) fn to_html_document(nodes: &[Node]) -> String {
+    let mut html = String::new();
+    for node in nodes {
+        write_node(&mut html, node);
+        html.push('\n');
+    }
+    html
+}
+
+/// The HTML of `nodes` inside a block. Raw HTML of the note is written as it is; the HTML
+/// allowlist runs on the whole body after this.
 pub(crate) fn to_html(nodes: &[Node]) -> String {
     let mut html = String::new();
     for node in nodes {
@@ -185,8 +196,8 @@ fn write_node(html: &mut String, node: &Node) {
             children,
         } => {
             let fold = match fold {
-                Some(CalloutFold::Open) => " data-fold=\"open\"",
-                Some(CalloutFold::Closed) => " data-fold=\"closed\"",
+                Some(CalloutFold::Open) => " data-callout-fold=\"open\"",
+                Some(CalloutFold::Closed) => " data-callout-fold=\"closed\"",
                 None => "",
             };
             let _ = write!(
@@ -260,7 +271,7 @@ fn write_table_or_inline(html: &mut String, node: &Node) {
         Node::InlineCode(value) => {
             let _ = write!(html, "<code>{}</code>", escape(value));
         }
-        Node::Break => html.push_str("<br>"),
+        Node::Break => html.push_str("<br>\n"),
         _ => write_reference(html, node),
     }
 }
@@ -293,21 +304,22 @@ fn write_reference(html: &mut String, node: &Node) {
             anchor,
             children,
         } => {
-            let _ = write!(
-                html,
-                "<a href=\"{}\">",
-                escape(&page_href(slug.as_str(), anchor.as_ref()))
-            );
+            let href = page_href(slug.as_str(), anchor.as_ref());
+            let _ = write!(html, "<a href=\"{}\" data-wikilink>", escape(&href));
             html.push_str(&to_html(children));
             html.push_str("</a>");
         }
-        Node::PageEmbed { slug, anchor } => {
+        Node::PageEmbed {
+            slug,
+            anchor,
+            title,
+        } => {
             let href = page_href(slug.as_str(), anchor.as_ref());
             let _ = write!(
                 html,
-                "<a class=\"embed\" href=\"{}\">{}</a>",
+                "<a href=\"{}\" data-embed>{}</a>",
                 escape(&href),
-                escape(slug.as_str())
+                escape(title.as_str())
             );
         }
         Node::AssetEmbed { blob, alt } => {
@@ -351,10 +363,11 @@ fn write_reference(html: &mut String, node: &Node) {
     }
 }
 
+/// The link of a page of the release: its slug, relative to the page that links, and its anchor.
 fn page_href(slug: &str, anchor: Option<&Anchor>) -> String {
     match anchor {
-        Some(anchor) => format!("/{slug}#{}", anchor.as_str()),
-        None => format!("/{slug}"),
+        Some(anchor) => format!("{slug}#{}", anchor.as_str()),
+        None => slug.to_owned(),
     }
 }
 

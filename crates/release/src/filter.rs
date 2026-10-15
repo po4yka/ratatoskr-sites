@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use ratatoskr_identifiers::BlobRef;
-use ratatoskr_sites_contracts::{Anchor, ImageUrl, LinkUrl, Slug};
+use ratatoskr_sites_contracts::{Anchor, ImageUrl, LinkUrl, PageTitle, Slug};
 use ratatoskr_sites_publications::{IndexedFile, IndexedLink};
 
 use crate::tree::{Node, merge_text, text_of};
@@ -24,15 +24,15 @@ use crate::tree::{Node, merge_text, text_of};
 pub(crate) struct Scope<'a> {
     /// The note.
     pub(crate) file: &'a IndexedFile,
-    /// The selected notes of the same vault connection: vault path to slug.
-    pub(crate) pages: &'a BTreeMap<String, Slug>,
+    /// The selected notes of the same vault connection: vault path to slug and title.
+    pub(crate) pages: &'a BTreeMap<String, (Slug, PageTitle)>,
     /// The attachments that the publication may publish: vault path to blob.
     pub(crate) attachments: &'a BTreeMap<String, BlobRef>,
 }
 
 /// What a reference names after the filter.
 enum Target<'a> {
-    Page(Slug, Option<Anchor>),
+    Page(Slug, Option<Anchor>, PageTitle),
     Asset(&'a BlobRef),
     Nothing,
 }
@@ -51,14 +51,18 @@ fn filter_node(node: Node, scope: &Scope<'_>) -> Vec<Node> {
     match node {
         Node::Link {
             url,
+            title,
             wiki,
             children,
-        } => link(&url, wiki, filter(children, scope), scope),
+        } => link(&url, &title, wiki, filter(children, scope), scope),
         Node::Image {
             url,
+            title,
             wiki,
             children,
-        } => embed(&url, wiki, &children, scope).into_iter().collect(),
+        } => embed(&url, &title, wiki, &children, scope)
+            .into_iter()
+            .collect(),
         Node::Paragraph(children) => {
             let mut children = filter(children, scope);
             strip_block_id(&mut children);
@@ -126,19 +130,25 @@ fn filter_children(node: Node, scope: &Scope<'_>) -> Node {
 
 /// A link: to a page, to a published attachment (as its embed, workspace-local design 7), to an
 /// external URL, or else the author's text.
-fn link(url: &str, wiki: Option<bool>, children: Vec<Node>, scope: &Scope<'_>) -> Vec<Node> {
+fn link(
+    url: &str,
+    title: &str,
+    wiki: Option<bool>,
+    children: Vec<Node>,
+    scope: &Scope<'_>,
+) -> Vec<Node> {
     if wiki.is_none() && is_external(url) {
         return match LinkUrl::parse(url) {
             Ok(url) => vec![Node::ExternalLink {
                 url,
-                title: None,
+                title: (!title.is_empty()).then(|| title.to_owned()),
                 children,
             }],
             Err(_) => children,
         };
     }
     match resolve(&scope.file.links, url, scope) {
-        Target::Page(slug, anchor) => vec![Node::PageLink {
+        Target::Page(slug, anchor, _) => vec![Node::PageLink {
             slug,
             anchor,
             children,
@@ -149,7 +159,7 @@ fn link(url: &str, wiki: Option<bool>, children: Vec<Node>, scope: &Scope<'_>) -
 }
 
 /// An embed or an image: of a page, of a published attachment, of an external image, or nothing.
-fn embed(url: &str, wiki: bool, children: &[Node], scope: &Scope<'_>) -> Option<Node> {
+fn embed(url: &str, title: &str, wiki: bool, children: &[Node], scope: &Scope<'_>) -> Option<Node> {
     // The text of a wiki embed is its target or a size, never alternative text.
     let alt = (!wiki)
         .then(|| text_of(children))
@@ -158,11 +168,15 @@ fn embed(url: &str, wiki: bool, children: &[Node], scope: &Scope<'_>) -> Option<
         return ImageUrl::parse(url).ok().map(|url| Node::ExternalImage {
             url,
             alt,
-            title: None,
+            title: (!title.is_empty()).then(|| title.to_owned()),
         });
     }
     match resolve(&scope.file.embeds, url, scope) {
-        Target::Page(slug, anchor) => Some(Node::PageEmbed { slug, anchor }),
+        Target::Page(slug, anchor, title) => Some(Node::PageEmbed {
+            slug,
+            anchor,
+            title,
+        }),
         Target::Asset(blob) => Some(asset(blob, alt)),
         Target::Nothing => None,
     }
@@ -185,8 +199,8 @@ fn resolve<'a>(listed: &[IndexedLink], written: &str, scope: &Scope<'a>) -> Targ
     else {
         return Target::Nothing;
     };
-    if let Some(slug) = scope.pages.get(path) {
-        return Target::Page(slug.clone(), anchor_of(&decoded));
+    if let Some((slug, title)) = scope.pages.get(path) {
+        return Target::Page(slug.clone(), anchor_of(&decoded), title.clone());
     }
     match scope.attachments.get(path) {
         Some(blob) => Target::Asset(blob),

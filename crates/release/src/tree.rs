@@ -3,7 +3,9 @@
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use ratatoskr_identifiers::BlobRef;
-use ratatoskr_sites_contracts::{Anchor, CalloutFold, ImageUrl, LinkUrl, Slug, TableAlign};
+use ratatoskr_sites_contracts::{
+    Anchor, CalloutFold, ImageUrl, LinkUrl, PageTitle, Slug, TableAlign,
+};
 
 /// One node of the tree of a note.
 ///
@@ -57,12 +59,14 @@ pub(crate) enum Node {
     /// A link as the note writes it: `wiki` is `Some(has_alias)` for `[[…]]`.
     Link {
         url: String,
+        title: String,
         wiki: Option<bool>,
         children: Vec<Node>,
     },
     /// An image or embed as the note writes it.
     Image {
         url: String,
+        title: String,
         wiki: bool,
         children: Vec<Node>,
     },
@@ -71,9 +75,11 @@ pub(crate) enum Node {
         anchor: Option<Anchor>,
         children: Vec<Node>,
     },
+    /// An embed of a selected note; `title` is the title of that page, for the HTML.
     PageEmbed {
         slug: Slug,
         anchor: Option<Anchor>,
+        title: PageTitle,
     },
     /// An attachment that the filter resolved: `blob` is the revision of that attachment.
     AssetEmbed {
@@ -117,10 +123,12 @@ enum Frame {
     Delete,
     Link {
         url: String,
+        title: String,
         wiki: Option<bool>,
     },
     Image {
         url: String,
+        title: String,
         wiki: bool,
     },
     /// A construct that this builder does not publish; its content stays as plain content.
@@ -190,8 +198,10 @@ fn open(tag: Tag<'_>) -> Frame {
         Tag::Link {
             link_type,
             dest_url,
+            title,
             ..
         } => Frame::Link {
+            title: title.into_string(),
             url: match link_type {
                 LinkType::Email => format!("mailto:{dest_url}"),
                 _ => dest_url.into_string(),
@@ -204,8 +214,10 @@ fn open(tag: Tag<'_>) -> Frame {
         Tag::Image {
             link_type,
             dest_url,
+            title,
             ..
         } => Frame::Image {
+            title: title.into_string(),
             url: dest_url.into_string(),
             wiki: matches!(link_type, LinkType::WikiLink { .. }),
         },
@@ -273,13 +285,15 @@ fn node_of(frame: Frame, children: Vec<Node>) -> Node {
         Frame::Emphasis => Node::Emphasis(children),
         Frame::Strong => Node::Strong(children),
         Frame::Delete => Node::Delete(children),
-        Frame::Link { url, wiki } => Node::Link {
+        Frame::Link { url, title, wiki } => Node::Link {
             url,
+            title,
             wiki,
             children,
         },
-        Frame::Image { url, wiki } => Node::Image {
+        Frame::Image { url, title, wiki } => Node::Image {
             url,
+            title,
             wiki,
             children,
         },

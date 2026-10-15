@@ -24,7 +24,7 @@ use html5ever::tokenizer::{
 };
 
 /// The elements that a page body may hold.
-const ELEMENTS: [&str; 43] = [
+const ELEMENTS: [&str; 44] = [
     "a",
     "abbr",
     "b",
@@ -68,6 +68,7 @@ const ELEMENTS: [&str; 43] = [
     "thead",
     "tr",
     "u",
+    "ul",
 ];
 
 /// The elements without an end tag.
@@ -81,9 +82,9 @@ const REMOVED_WITH_CONTENT: [&str; 15] = [
 
 /// The attributes that an element may carry. No element carries any other attribute.
 const ATTRIBUTES: [(&str, &[&str]); 14] = [
-    ("a", &["href", "title", "class"]),
+    ("a", &["href", "title", "data-wikilink", "data-embed"]),
     ("img", &["src", "alt", "title"]),
-    ("div", &["class", "data-callout", "data-fold"]),
+    ("div", &["class", "data-callout", "data-callout-fold"]),
     ("code", &["class"]),
     ("ol", &["start"]),
     ("td", &["align"]),
@@ -100,6 +101,9 @@ const ATTRIBUTES: [(&str, &[&str]); 14] = [
 /// The most elements that may be open at once. A deeper start tag is dropped and its text stays,
 /// so the work of an end tag, which looks for its element among the open ones, has a bound.
 pub const MAX_DEPTH: usize = 256;
+
+/// The attributes that are written without a value, as the renderer writes them.
+const BOOLEAN: [&str; 4] = ["checked", "disabled", "data-wikilink", "data-embed"];
 
 /// The attributes whose value is a URL.
 const URL_ATTRIBUTES: [&str; 2] = ["href", "src"];
@@ -209,6 +213,9 @@ impl State {
             };
             self.out.push(' ');
             self.out.push_str(key);
+            if BOOLEAN.contains(&key) {
+                continue;
+            }
             self.out.push_str("=\"");
             self.out.push_str(&escape(&value));
             self.out.push('"');

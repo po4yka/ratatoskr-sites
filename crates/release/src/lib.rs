@@ -192,15 +192,18 @@ fn render_note(
     text: &str,
 ) -> Result<Rendered, BuildError> {
     let connection = note.input.connection_id.as_str();
-    let pages: BTreeMap<String, Slug> = notes
+    let mut pages: BTreeMap<String, (Slug, PageTitle)> = BTreeMap::new();
+    for other in notes
         .iter()
         .filter(|other| other.input.connection_id == connection)
-        .filter_map(|other| {
-            by_path
-                .get(other.file.path.as_str())
-                .map(|slug| (other.file.path.clone(), (*slug).clone()))
-        })
-        .collect();
+    {
+        if let Some(slug) = by_path.get(other.file.path.as_str()) {
+            pages.insert(
+                other.file.path.clone(),
+                ((*slug).clone(), title_of(other.file)?),
+            );
+        }
+    }
     let attachments = publishable_attachments(&note.input.publication, note.input.files);
     let scope = Scope {
         file: note.file,
@@ -228,7 +231,7 @@ fn render_note(
         })
         .collect();
     let blobs = used.into_values().collect();
-    let html = render::to_html(&tree);
+    let html = render::to_html_document(&tree);
     if html.len() > MAX_PAGE_HTML_BYTES {
         return Err(BuildError {
             class: PAGE_TOO_LARGE,
