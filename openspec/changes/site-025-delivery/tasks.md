@@ -40,4 +40,4 @@
 
 ## 8. Owner guide (workspace task 5.36)
 
-- [ ] 8.1 Write `docs/OWNER_GUIDE.md`: the selection precedence, the `publish` site list, the explicit first release, the release modes, the manifest and its approval in Platform, the effective set, and the cache bounds after a withdrawal. No test: documentation. Verify that each capability name and each cache bound matches the workspace specs.
+- [x] 8.1 Write `docs/OWNER_GUIDE.md`: the selection precedence, the `publish` site list, the explicit first release, the release modes, the manifest and its approval in Platform, the effective set, and the cache bounds after a withdrawal. No test: documentation. Verify that each capability name and each cache bound matches the workspace specs.

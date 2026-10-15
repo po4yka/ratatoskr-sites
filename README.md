@@ -7,8 +7,10 @@ site is an independent UI in its own repository, and reads a release with `@rata
 
 > **Status:** in development. The service selects the notes of each publication, builds an
 > immutable release through the privacy filter, makes it current in one transaction and announces
-> it. The manifest, the build triggers and the Content Delivery API are planned in the workspace
-> change `add-site-publications` (SITE-025), group 5.
+> it, coalesces the builds that commands and note changes request, keeps the manifest and the
+> projection of the approvals of Platform, and serves the current release of each approved site
+> through the Content Delivery API. The notes internal index route does not exist yet, so a build
+> on the host fails with `sites.notes_index_unavailable` until it does.
 
 > [!IMPORTANT]
 > **Ratatoskr is in development.** No database holds data that has to survive a schema change.
@@ -47,7 +49,19 @@ The design is in `ratatoskr-workspace`: ADR-0011, `docs/NOTES_AND_SITES.md`, and
 | Note bytes | `/mnt/nvme/ratatoskr/blobs/ratatoskr-notes`, read-only, through the group `ratatoskr-notes-blobs` | This service reads; only `ratatoskr-notes` writes |
 | Release pages and assets | `/mnt/nvme/ratatoskr/blobs/ratatoskr-sites` | This service only |
 
-The domain API has no routes yet.
+The domain API:
+
+| Route | Class at Edge | Answer |
+|---|---|---|
+| `GET /v1/sites` | management | The sites, at most 100 |
+| `GET`, `PUT /v1/sites/{site}/manifest` | management | The active manifest; a submission stores one |
+| `GET /v1/sites/{site}/releases` | management | The current release id, the releases and the failed builds, at most 100 each |
+| `GET /v1/sites/{site}/publications`, `GET`, `PUT`, `DELETE .../publications/{publication}` | management | The publications of the site |
+| `GET`, `HEAD /v1/sites/{site}/content/*` | site-origin, `public` | The Content Delivery API, `openapi/content-delivery.json` |
+| `GET /internal/sites/{site}/manifest` | none; loopback only | The active manifest, for Edge's approval |
+
+Every route outside `content/` refuses Edge's anonymous claim. The owner guide is
+[docs/OWNER_GUIDE.md](docs/OWNER_GUIDE.md).
 
 ## The HTML of a page
 
@@ -80,9 +94,10 @@ What the allowlist does to markup that a note writes:
 - [x] Verified reads of note bytes (tasks 5.8 and 5.9): `notes_blobs::NotesBlobReader`.
 - [x] Selection, slugs, privacy filter and sanitised HTML (tasks 5.10 to 5.17).
 - [x] Releases, the release id and the current-release switch with its event (tasks 5.18 to 5.21).
-- [ ] Build triggers and the suspension of a disconnected vault (tasks 5.22 to 5.25).
-- [ ] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
-- [ ] Owner guide (task 5.36).
+- [x] Build triggers and the suspension of a disconnected vault (tasks 5.22 to 5.25).
+- [x] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
+- [x] Owner guide (task 5.36).
+- [ ] The HTTP client of the notes internal index route (workspace tasks 4.1 to 4.5).
 
 ## Development
 
