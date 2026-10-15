@@ -68,3 +68,15 @@ not release.
 
 - **WHEN** the owner changes a note of a manual publication after the release, and then removes another publication
 - **THEN** the release of the removal build holds the released text of the changed note, verified by `services/sites/tests/removal_build.rs::removal_build_keeps_the_released_text`
+
+### Requirement: The sources of a release hold only what it publishes
+
+`sites.release_sources` SHALL hold, for each note and attachment that a release publishes, only a
+projection of its indexed file: the links and embeds whose target the release publishes, the
+frontmatter keys that its publications allow, and the tags that they include. An attachment SHALL
+be there only by a path that a published note links to or embeds.
+
+#### Scenario: The privacy fixture with copies of a published image
+
+- **WHEN** the privacy fixture, with copies of a published image in `private/` and `.obsidian/`, is built
+- **THEN** no column of any source row holds a canary, a private path or a field outside the allowlist, verified by `services/sites/tests/release_sources.rs::sources_hold_nothing_of_an_unselected_file`
