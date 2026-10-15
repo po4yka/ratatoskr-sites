@@ -87,10 +87,12 @@ impl Provenance {
                     continue;
                 };
                 source.publications.insert(publication_id.clone());
-                source.names_site = names_site(file, site.site_id.as_str());
-                source
-                    .selection_tags
-                    .extend(matched_tags(file, &input.publication.included_tags));
+                // The selection inputs come from the revision that the row stores (that of the
+                // first selecting publication), never from the version that another publication
+                // read.
+                source.names_site = names_site(&source.file, site.site_id.as_str());
+                let tags = matched_tags(&source.file, &input.publication.included_tags);
+                source.selection_tags.extend(tags);
             }
         }
         let assigned = assign_slugs(&selected_notes(site))?;

@@ -201,3 +201,6 @@ makes an ordinary build, because the command or the automatic mode releases new 
   from the release renders those that the current allowlist of the rendering publication still
   allows: never a key that the page did not show. A wider allowlist applies with the next build
   that reads the notes index.
+- The selection inputs of a note row (`names_site`, `selection_tags`) come from the revision that
+  the row stores, the one of the first selecting publication, never from the version that another
+  publication read.
