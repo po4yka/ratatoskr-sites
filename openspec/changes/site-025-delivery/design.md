@@ -128,9 +128,10 @@ it.
 ### 12. Second review (workspace tasks 5.44 to 5.49)
 
 - A publication that leaves the effective set of a released site, and a change or delete of a
-  released publication, write one build request of the origin `removal`, in each release mode. It
-  reads the publications of the current release that stay in the effective set, and the notes as
-  they are when it runs.
+  released publication, write one build request of the origin `removal`, in each release mode,
+  unless a removal request already waits that no build has taken. A build of removal requests only
+  reads the publications of the current release that stay in the effective set, from the files
+  that the current release was built from (design 13), never from the notes index.
 - Each request row counts its own attempts before the build; a transient failure is reported only
   to the operations whose row reached three attempts. A `DELETE` retry refreshes the servable set.
   The pause seam of `Servable` exists only with the feature `test-support`.
@@ -138,10 +139,26 @@ it.
 
 ### 13. A removal build releases no new content (workspace tasks 5.51, 5.52)
 
-`sites.release_sources` keeps, for each note and attachment that a release publishes, the
-`IndexedFile` that the build read: its frontmatter, tags, headings, links and its revision
-`BlobRef`. A build that only removal requests asked for reads these files of the current release
+`sites.release_sources` keeps, for each note and attachment that a release publishes, a projection
+of the `IndexedFile` that the build read: the links and embeds whose target the release publishes,
+the frontmatter keys that the selecting publications allowed (with `slug`, and `publish` for this
+site only), the tags that they include, and the revision `BlobRef`; no heading and no block id. An
+attachment is there only by a path that a published note links to or embeds. A build that only removal requests asked for reads these files of the current release
 instead of the notes index, applies the publications that stay, and reads the bytes of each
 revision from the notes blob root, as every build does. So in each release mode it publishes no
 note change that the owner did not release. A removal request that joins a command or a file change
 makes an ordinary build, because the command or the automatic mode releases new content anyway.
+
+### 14. Third review (workspace tasks 5.53 to 5.61)
+
+- A build that no command requested reads each manual publication from the files of the current
+  release, and only each automatic publication from the notes index. Only a build command releases
+  an edit of a manual publication.
+- The worker marks the rows that a build takes (`taken_at`); a removal request is deduplicated only
+  against rows that wait.
+- A 404 of the notes index is a missing connection only with the code `notes.connection.not_found`.
+  `RATATOSKR__NOTES__BASE_URL` is a loopback `http://` origin with no path and no query.
+- A build from the release reads only the frontmatter keys that the stored files hold. When the
+  owner widens the frontmatter allowlist of a publication, a removal build cannot add the new keys:
+  the stored files do not hold them, so the change cannot expose a key that the release did not
+  publish. The new keys appear with the next build that a command or an automatic change requests.

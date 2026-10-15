@@ -95,7 +95,7 @@ have `publish: true` on many notes; nothing goes to a site until you request the
 | Mode | What makes a new release |
 |---|---|
 | `automatic` (the default) | A change of a note that the publication selects now, or selected in the current release, requests a build. You can also request a build. |
-| `manual` | Only a build that you request. |
+| `manual` | Only a build that you request. A build that a change of an automatic publication of the same site starts keeps the released text of a manual publication. |
 
 The service makes one build of a site at a time. The changes that arrive while a build runs make
 one more build after it, not one build for each change. A build whose content did not change makes
@@ -161,7 +161,9 @@ manifest, or delete it in the web client, its pages, its assets and its search h
 the release document no longer lists them. The service also requests a build, in each release
 mode, so the pages that stay lose their links to the removed pages. That build reads the notes as
 the current release holds them, not as they are now, so it publishes no change that you did not
-release. A change of a publication that already has a release requests the same build.
+release. A change of a publication that already has a release requests the same build. A field
+that you add to the frontmatter allowlist appears only with the next build that you request, or that
+a change of an automatic publication requests.
 
 ## What a visitor reads
 
