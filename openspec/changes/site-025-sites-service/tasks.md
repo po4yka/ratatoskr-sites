@@ -5,8 +5,8 @@
 
 ## 2. Database role (workspace tasks 5.4, 5.5)
 
-- [ ] 2.1 RED: add `services/sites/tests/deploy_files.rs::role_file_creates_the_unprivileged_sites_role`, which asserts the statements of `deploy/postgres/role.sql` and the database URL of the example. Run it and confirm that the `nobypassrls` assertion fails because the scaffolded file creates only the role.
-- [ ] 2.2 GREEN: complete `deploy/postgres/role.sql` and the database URL of the example. Verify 2.1.
+- [x] 2.1 RED: add `services/sites/tests/deploy_files.rs::role_file_creates_the_unprivileged_sites_role`, which asserts the statements of `deploy/postgres/role.sql` and the database URL of the example. Run it and confirm that the `nobypassrls` assertion fails because the scaffolded file creates only the role.
+- [x] 2.2 GREEN: complete `deploy/postgres/role.sql` and the database URL of the example. Verify 2.1.
 
 ## 3. Read group membership (workspace tasks 5.6, 5.7)
 
