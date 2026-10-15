@@ -92,7 +92,8 @@ impl NotesBlobReader {
 
     /// The bytes that `reference` names, after they are verified.
     ///
-    /// The owner and the algorithm are checked before the root is touched. The length is checked
+    /// The owner, the algorithm and the bound of [`NotesBlobReader::with_max_bytes`] are checked
+    /// before the root is touched. The length is checked
     /// from the metadata before the file is read, so a file of another length is never read into
     /// memory, and again on the bytes that were read. Then the bytes are hashed. The file is opened
     /// read-only.
@@ -107,6 +108,12 @@ impl NotesBlobReader {
         match reference.digest.algorithm {
             DigestAlgorithm::Sha256 => {}
             _ => return Err(NotesBlobError::UnsupportedAlgorithm),
+        }
+        if self
+            .max_bytes
+            .is_some_and(|max_bytes| reference.length_bytes > max_bytes)
+        {
+            return Err(NotesBlobError::Length);
         }
         let hex = reference.digest.hex.as_str();
         // `DigestHex` holds exactly 64 lower-case hex digits, so the split cannot fail.
