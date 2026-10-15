@@ -20,7 +20,7 @@
 
 ## 4. The effective set (workspace tasks 5.28, 5.29)
 
-- [ ] 4.1 RED: add `services/sites/tests/effective_set.rs` with `added_capability_waits_for_approval`, `removed_capability_stops_without_approval`, `new_hostname_and_publication_wait_for_approval` and `unrequested_public_capability_is_not_found`. Confirm that the status assertion of the first fails because the active manifest is served without approval.
+- [x] 4.1 RED: add `services/sites/tests/effective_set.rs` with `added_capability_waits_for_approval`, `removed_capability_stops_without_approval`, `new_hostname_and_publication_wait_for_approval` and `unrequested_public_capability_is_not_found`. Confirm that the status assertion of the first fails because the active manifest is served without approval.
 - [ ] 4.2 GREEN: compute the effective set as the workspace spec `site-manifest` defines it, build only its publications, and keep the in-memory set of servable sites from it. Verify 4.1.
 
 ## 5. Route classes (workspace tasks 5.30, 5.31)
