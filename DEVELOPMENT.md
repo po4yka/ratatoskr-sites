@@ -115,6 +115,7 @@ canary location there.
 | `deploy/nats/identity.conf` | A copy of the `SITES` stanza of Platform's NATS authorization file. |
 | `deploy/systemd/sites.conf.example` | The environment file of the service on the host. |
 | `deploy/systemd/ratatoskr-sites.service` | The unit of the service. |
+| `Dockerfile` | The `export` stage holds only `ratatoskr-sites` for `linux/arm64` and glibc 2.36. The `release-artifact` job of `ci.yml` publishes it for each commit on `main` through the reusable workflow of `ratatoskr-workspace`. |
 | `deploy/sysusers.d/ratatoskr-sites.conf` | The system user `ratatoskr-sites`, and its membership in the read group `ratatoskr-notes-blobs` of the notes blob root. The group, the setgid root and the umask of notes come from OBS-023. |
 
 ## Workflow
