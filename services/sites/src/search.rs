@@ -11,6 +11,9 @@ use ratatoskr_sites_release::BuiltPage;
 use serde_json::Value;
 use sqlx::PgConnection;
 
+use crate::provenance::Provenance;
+use crate::servable::Serving;
+
 /// The longest snippet, in Unicode scalar values.
 pub const MAX_SNIPPET_CHARS: usize = 300;
 
@@ -82,13 +85,14 @@ pub(crate) async fn index(
     connection: &mut PgConnection,
     release_id: &str,
     pages: &[BuiltPage],
+    provenance: &Provenance,
 ) -> Result<(), sqlx::Error> {
     for built in pages {
         let text = page_text(&built.page);
         let snippet: String = text.chars().take(MAX_SNIPPET_CHARS).collect();
         sqlx::query(
-            "insert into sites.release_search (release_id, slug, title, snippet, document) \
-             values ($1, $2, $3, $4, to_tsvector('simple', $3 || ' ' || $5)) \
+            "insert into sites.release_search (release_id, slug, title, snippet, document, \
+             publication_ids) values ($1, $2, $3, $4, to_tsvector('simple', $3 || ' ' || $5), $6) \
              on conflict do nothing",
         )
         .bind(release_id)
@@ -96,35 +100,39 @@ pub(crate) async fn index(
         .bind(built.page.title.as_str())
         .bind(&snippet)
         .bind(cut_bytes(&text, MAX_INDEXED_BYTES))
+        .bind(provenance.page(built.page.slug.as_str()))
         .execute(&mut *connection)
         .await?;
     }
     Ok(())
 }
 
-/// The results of `query` in the release `release_id`, in descending relevance with ties by slug,
-/// after `offset` results, and whether more follow.
+/// The results of `query` in the release of `serving`, among the pages of its effective
+/// publications, in descending relevance with ties by slug, after `offset` results, and whether
+/// more follow.
 ///
 /// # Errors
 ///
 /// The query error.
 pub async fn search(
     database: &Database,
-    release_id: &str,
+    serving: &Serving,
     query: &str,
     limit: u32,
     offset: u32,
 ) -> Result<(Vec<SearchResult>, bool), sqlx::Error> {
     let rows: Vec<(String, String, String)> = sqlx::query_as(
         "select slug, title, snippet from sites.release_search \
-         where release_id = $1 and document @@ websearch_to_tsquery('simple', $2) \
+         where release_id = $1 and publication_ids && $5::text[] \
+         and document @@ websearch_to_tsquery('simple', $2) \
          order by ts_rank(document, websearch_to_tsquery('simple', $2)) desc, slug \
          limit $3 offset $4",
     )
-    .bind(release_id)
+    .bind(&serving.release_id)
     .bind(query)
     .bind(i64::from(limit) + 1)
     .bind(i64::from(offset))
+    .bind(&serving.publications)
     .fetch_all(database.pool())
     .await?;
     let has_more = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);

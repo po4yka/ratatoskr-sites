@@ -130,6 +130,9 @@ create table sites.release_pages (
     slug         text not null,
     title        text not null,
     page_digest  text not null check (page_digest ~ '^[0-9a-f]{64}$'),
+    -- The publications that select the note of the page. The delivery serves the page only while
+    -- one of them is in the effective set of the site.
+    publication_ids text[] not null default '{}',
     primary key (release_id, slug)
 );
 
@@ -139,6 +142,8 @@ create table sites.release_assets (
     digest        text   not null check (digest ~ '^[0-9a-f]{64}$'),
     media_type    text   not null,
     length_bytes  bigint not null check (length_bytes >= 0),
+    -- The publications of the pages that use the asset.
+    publication_ids text[] not null default '{}',
     primary key (release_id, digest)
 );
 
@@ -163,6 +168,7 @@ create table sites.release_search (
     title       text     not null,
     snippet     text     not null check (char_length(snippet) <= 300),
     document    tsvector not null,
+    publication_ids text[] not null default '{}',
     primary key (release_id, slug)
 );
 

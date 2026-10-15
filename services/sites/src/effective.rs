@@ -1,5 +1,6 @@
 //! The effective set of a site (workspace spec `site-manifest`, "The effective set of a site is
-//! approved and active").
+//! approved and active"). A publication is in the set only while its row exists, so a `DELETE` of
+//! a publication removes it at once.
 
 use std::collections::BTreeSet;
 
@@ -75,11 +76,19 @@ pub async fn effective_set(database: &Database, site_id: &str) -> Result<Effecti
                 .collect()
         })
         .unwrap_or_default();
+    // A publication that the owner deleted leaves the set at once, as a removal from the manifest.
+    let existing: Vec<String> =
+        sqlx::query_scalar("select publication_id from sites.publications where site_id = $1")
+            .bind(site_id)
+            .fetch_all(database.pool())
+            .await?;
     let publications = active
         .publications
         .iter()
         .map(|publication| publication.as_str().to_owned())
-        .filter(|publication| approved_publications.contains(publication))
+        .filter(|publication| {
+            approved_publications.contains(publication) && existing.contains(publication)
+        })
         .collect();
     Ok(Effective {
         capabilities,

@@ -20,6 +20,7 @@ pub mod events;
 pub mod notes_blobs;
 pub mod notes_index;
 pub mod outbox;
+mod provenance;
 pub mod release_build;
 pub mod release_read;
 pub mod search;

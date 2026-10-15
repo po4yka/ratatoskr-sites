@@ -206,13 +206,14 @@ pub(crate) async fn write(
     .bind(&body.frontmatter_allow)
     .fetch_optional(state.database.pool())
     .await?;
-    written
-        .map(|row| Json(PublicationView::from(row)))
-        .ok_or(Fault::SiteNotFound)
+    let written = written.ok_or(Fault::SiteNotFound)?;
+    state.servable.refresh(&state.database, &site).await?;
+    Ok(Json(PublicationView::from(written)))
 }
 
 /// `DELETE /v1/sites/{site}/publications/{publication}`: 204, or 404
-/// `sites.publication_not_found`. The releases that hold its pages stay as they are.
+/// `sites.publication_not_found`. The releases stay as they are; the delivery stops serving the
+/// pages and assets that only this publication selected at once.
 pub(crate) async fn remove(
     State(state): State<Arc<ApiState>>,
     Path((site, publication)): Path<(String, String)>,
@@ -226,5 +227,7 @@ pub(crate) async fn remove(
     if removed.rows_affected() == 0 {
         return Err(Fault::PublicationNotFound);
     }
+    // The publication leaves the effective set at once, and with it its pages and assets.
+    state.servable.refresh(&state.database, &site).await?;
     Ok(StatusCode::NO_CONTENT)
 }

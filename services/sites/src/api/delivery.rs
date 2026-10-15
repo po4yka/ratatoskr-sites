@@ -14,12 +14,15 @@ use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
-use ratatoskr_sites_contracts::SiteCapability;
+use std::collections::BTreeSet;
+
+use ratatoskr_sites_contracts::{NavigationEntry, Release, SiteCapability};
 use serde::Deserialize;
 
 use super::ApiState;
 use super::fault::Fault;
 use crate::search;
+use crate::servable::Serving;
 
 /// The `Cache-Control` of the release, page and search routes: at most 60 seconds.
 const SHORT: &str = "public, max-age=60";
@@ -44,8 +47,7 @@ fn not_stored(fault: Fault) -> Response {
     response
 }
 
-/// The `ETag` of `value`: the release id for the release, page and search routes, the digest for
-/// the asset route.
+/// The `ETag` of the asset `value`. The release, page and search routes use [`Serving::tag`].
 fn tag(value: &str) -> String {
     format!("\"{value}\"")
 }
@@ -83,7 +85,9 @@ fn answer(
     built.unwrap_or_else(|_| Fault::Unavailable.into_response())
 }
 
-/// `.../content/release`: the current `sites/release.v1` document.
+/// `.../content/release`: the current `sites/release.v1` document, with only the pages, assets,
+/// navigation entries and publication ids of the effective publications. When all of them are
+/// effective, the stored bytes are served unchanged.
 pub(crate) async fn release(
     State(state): State<Arc<ApiState>>,
     Path(site): Path<String>,
@@ -92,20 +96,97 @@ pub(crate) async fn release(
     let Some(serving) = state.servable.serving(&site, SiteCapability::PagesRead) else {
         return absent();
     };
-    let etag = tag(&serving.release_id);
-    if unchanged(&headers, &etag) {
-        return answer(&headers, &etag, SHORT, JSON, Vec::new());
+    if unchanged(&headers, &serving.tag) {
+        return answer(&headers, &serving.tag, SHORT, JSON, Vec::new());
     }
-    let document: Result<Option<Vec<u8>>, sqlx::Error> =
-        sqlx::query_scalar("select document from sites.releases where release_id = $1")
-            .bind(&serving.release_id)
-            .fetch_optional(state.database.pool())
-            .await;
-    match document {
-        Ok(Some(document)) => answer(&headers, &etag, SHORT, JSON, document),
+    match served_release(&state, &serving).await {
+        Ok(Some(document)) => answer(&headers, &serving.tag, SHORT, JSON, document),
         Ok(None) => absent(),
         Err(error) => Fault::from(error).into_response(),
     }
+}
+
+/// The bytes of the release document of `serving`, filtered by its effective publications.
+async fn served_release(
+    state: &ApiState,
+    serving: &Serving,
+) -> Result<Option<Vec<u8>>, sqlx::Error> {
+    let pool = state.database.pool();
+    let document: Option<Vec<u8>> =
+        sqlx::query_scalar("select document from sites.releases where release_id = $1")
+            .bind(&serving.release_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some(document) = document else {
+        return Ok(None);
+    };
+    let Ok(mut release) = serde_json::from_slice::<Release>(&document) else {
+        return Ok(None);
+    };
+    let pages: BTreeSet<String> = sqlx::query_scalar(
+        "select slug from sites.release_pages where release_id = $1 \
+         and publication_ids && $2::text[]",
+    )
+    .bind(&serving.release_id)
+    .bind(&serving.publications)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+    let assets: BTreeSet<String> = sqlx::query_scalar(
+        "select digest from sites.release_assets where release_id = $1 \
+         and publication_ids && $2::text[]",
+    )
+    .bind(&serving.release_id)
+    .bind(&serving.publications)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+    let complete = release.pages.len() == pages.len()
+        && release.assets.len() == assets.len()
+        && release.publication_ids.iter().all(|publication| {
+            serving
+                .publications
+                .iter()
+                .any(|kept| kept == publication.as_str())
+        });
+    if complete {
+        return Ok(Some(document));
+    }
+    release
+        .pages
+        .retain(|page| pages.contains(page.slug.as_str()));
+    release
+        .assets
+        .retain(|asset| assets.contains(asset.sha256.as_str()));
+    release.publication_ids.retain(|publication| {
+        serving
+            .publications
+            .iter()
+            .any(|kept| kept == publication.as_str())
+    });
+    release.navigation = kept_navigation(std::mem::take(&mut release.navigation), &pages);
+    Ok(serde_json::to_vec(&release).ok())
+}
+
+/// The navigation entries that name a kept page, or that hold one. An entry of a page that is not
+/// kept is dropped, and its kept children take its place.
+fn kept_navigation(
+    entries: Vec<NavigationEntry>,
+    pages: &BTreeSet<String>,
+) -> Vec<NavigationEntry> {
+    let mut kept = Vec::new();
+    for mut entry in entries {
+        entry.children = kept_navigation(std::mem::take(&mut entry.children), pages);
+        match &entry.slug {
+            Some(slug) if pages.contains(slug.as_str()) => kept.push(entry),
+            Some(_) => kept.append(&mut entry.children),
+            None if entry.children.is_empty() => {}
+            None => kept.push(entry),
+        }
+    }
+    kept
 }
 
 /// `.../content/pages/{slug}`: one `sites/page.v1` of the release that the servable set names,
@@ -119,12 +200,14 @@ pub(crate) async fn page(
     let Some(serving) = state.servable.serving(&site, SiteCapability::PagesRead) else {
         return absent();
     };
-    let etag = tag(&serving.release_id);
+    let etag = serving.tag.clone();
     let digest: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
-        "select page_digest from sites.release_pages where release_id = $1 and slug = $2",
+        "select page_digest from sites.release_pages where release_id = $1 and slug = $2 \
+         and publication_ids && $3::text[]",
     )
     .bind(&serving.release_id)
     .bind(&slug)
+    .bind(&serving.publications)
     .fetch_optional(state.database.pool())
     .await;
     let digest = match digest {
@@ -152,10 +235,12 @@ pub(crate) async fn asset(
         return absent();
     };
     let media_type: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
-        "select media_type from sites.release_assets where release_id = $1 and digest = $2",
+        "select media_type from sites.release_assets where release_id = $1 and digest = $2 \
+         and publication_ids && $3::text[]",
     )
     .bind(&serving.release_id)
     .bind(&digest)
+    .bind(&serving.publications)
     .fetch_optional(state.database.pool())
     .await;
     let media_type = match media_type {
@@ -228,11 +313,11 @@ pub(crate) async fn search(
     let Some((q, limit, offset)) = query.bounded() else {
         return Fault::Invalid.into_response();
     };
-    let etag = tag(&serving.release_id);
+    let etag = serving.tag.clone();
     if unchanged(&headers, &etag) {
         return answer(&headers, &etag, SHORT, JSON, Vec::new());
     }
-    match search::search(&state.database, &serving.release_id, q, limit, offset).await {
+    match search::search(&state.database, &serving, q, limit, offset).await {
         Ok((results, has_more)) => {
             let body = serde_json::json!({ "results": results, "has_more": has_more });
             match serde_json::to_vec(&body) {

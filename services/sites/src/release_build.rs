@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use ratatoskr_sites_contracts::{PublicationId, SiteId};
 use ratatoskr_sites_persistence::Database;
-use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, PublicationMode, select};
+use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, PublicationMode};
 use ratatoskr_sites_release::{Built, PublicationInput, SiteInput, build_release, selected_notes};
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ use crate::effective::effective_set;
 use crate::events::{self, BuildReport};
 use crate::notes_blobs::{NotesBlobError, NotesBlobReader};
 use crate::notes_index::NotesIndex;
+use crate::provenance::Provenance;
 use crate::sites_blobs::SitesBlobs;
 
 /// The largest note or attachment that a build reads: 64 MiB, the default largest file that
@@ -301,17 +302,13 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             }
         }
         let site = site_input(site_id, &rows, &indexes)?;
-        let sources: Vec<(Uuid, String)> = rows
+        let publications: Vec<(Uuid, String)> = rows
             .iter()
-            .zip(&site.publications)
-            .flat_map(|(row, input)| {
-                select(&input.publication, input.files)
-                    .into_iter()
-                    .map(|path| (row.connection_id, path))
-            })
+            .map(|row| (row.connection_id, row.publication_id.clone()))
             .collect();
+        let provenance = Provenance::of(&publications, &site).map_err(BuildFailure::Build)?;
         let built = self.render(&site).await?;
-        self.store(site_id, owner, &built, &sources).await
+        self.store(site_id, owner, &built, &provenance).await
     }
 
     /// Read every selected note with the bound of the reader, and build the release.
@@ -337,7 +334,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         site_id: &str,
         owner: Uuid,
         built: &Built,
-        sources: &[(Uuid, String)],
+        provenance: &Provenance,
     ) -> Result<BuildOutcome, BuildFailure> {
         let document = serde_jcs::to_vec(&built.release).map_err(|error| {
             BuildFailure::Build(BuildError {
@@ -372,7 +369,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Store)?;
         }
-        self.record(site_id, owner, &release_id, &document, built, sources)
+        self.record(site_id, owner, &release_id, &document, built, provenance)
             .await?;
         Ok(BuildOutcome {
             release_id,
@@ -390,7 +387,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         release_id: &str,
         document: &[u8],
         built: &Built,
-        sources: &[(Uuid, String)],
+        provenance: &Provenance,
     ) -> Result<(), BuildFailure> {
         let event_id = Uuid::now_v7();
         let envelope = events::release_published(event_id, owner, release_id, &built.release)
@@ -421,34 +418,42 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .map_err(BuildFailure::Database)?;
         for page in &built.release.pages {
             sqlx::query(
-                "insert into sites.release_pages (release_id, slug, title, page_digest) \
-                 values ($1, $2, $3, $4) on conflict do nothing",
+                "insert into sites.release_pages (release_id, slug, title, page_digest, \
+                 publication_ids) values ($1, $2, $3, $4, $5) on conflict do nothing",
             )
             .bind(release_id)
             .bind(page.slug.as_str())
             .bind(page.title.as_str())
             .bind(page.page_sha256.as_str())
+            .bind(provenance.page(page.slug.as_str()))
             .execute(&mut *transaction)
             .await
             .map_err(BuildFailure::Database)?;
         }
-        crate::search::index(&mut transaction, release_id, &built.pages)
+        crate::search::index(&mut transaction, release_id, &built.pages, provenance)
             .await
             .map_err(BuildFailure::Database)?;
+        let asset_publications = provenance.assets(built);
         for asset in &built.release.assets {
             sqlx::query(
-                "insert into sites.release_assets (release_id, digest, media_type, length_bytes) \
-                 values ($1, $2, $3, $4) on conflict do nothing",
+                "insert into sites.release_assets (release_id, digest, media_type, length_bytes, \
+                 publication_ids) values ($1, $2, $3, $4, $5) on conflict do nothing",
             )
             .bind(release_id)
             .bind(asset.sha256.as_str())
             .bind(asset.media_type.as_str())
             .bind(i64::try_from(asset.size_bytes).unwrap_or(i64::MAX))
+            .bind(
+                asset_publications
+                    .get(asset.sha256.as_str())
+                    .cloned()
+                    .unwrap_or_default(),
+            )
             .execute(&mut *transaction)
             .await
             .map_err(BuildFailure::Database)?;
         }
-        for (connection_id, path) in sources {
+        for (connection_id, path) in &provenance.sources {
             sqlx::query(
                 "insert into sites.release_sources (release_id, connection_id, path) \
                  values ($1, $2, $3) on conflict do nothing",

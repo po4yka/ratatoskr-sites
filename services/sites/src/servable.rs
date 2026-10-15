@@ -18,6 +18,12 @@ pub struct Serving {
     pub release_id: String,
     /// The public capabilities of the effective set.
     pub capabilities: BTreeSet<SiteCapability>,
+    /// The publications of the effective set, in ascending order. The delivery serves a page, an
+    /// asset or a search hit only when one of its publications is here.
+    pub publications: Vec<String>,
+    /// The `ETag` of the release, page and search answers: it changes with the release and with
+    /// the effective publications.
+    pub tag: String,
 }
 
 /// The servable sites. Shared by the routes, the consumers and the build worker.
@@ -28,6 +34,13 @@ pub struct Servable {
     /// earlier cannot write after one that read it later.
     refreshing: tokio::sync::Mutex<()>,
     pause: Mutex<Option<RefreshPause>>,
+}
+
+/// The `ETag` value of the release `release_id` served for `publications`: the release id, and the
+/// start of the SHA-256 of the publication list.
+fn tag_of(release_id: &str, publications: &[String]) -> String {
+    let list = ratatoskr_sites_release::sha256_hex(publications.join("\n").as_bytes());
+    format!("\"{release_id}.{}\"", list.get(..16).unwrap_or_default())
 }
 
 /// A seam for the tests of the refresh: the next refresh stops between its read and its write,
@@ -89,9 +102,15 @@ impl Servable {
             .collect();
         let serving = release
             .filter(|_| !capabilities.is_empty())
-            .map(|release_id| Serving {
-                release_id,
-                capabilities,
+            .map(|release_id| {
+                let publications: Vec<String> = effective.publications.into_iter().collect();
+                let tag = tag_of(&release_id, &publications);
+                Serving {
+                    release_id,
+                    capabilities,
+                    publications,
+                    tag,
+                }
             });
         let pause = self.pause.lock().ok().and_then(|mut held| held.take());
         if let Some(pause) = pause {
