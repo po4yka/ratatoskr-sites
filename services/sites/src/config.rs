@@ -270,6 +270,23 @@ fn default_log_filter() -> String {
     "info".to_owned()
 }
 
+/// Whether `url` is an `http://` origin of a loopback host (`127.0.0.0/8`, `::1` or `localhost`)
+/// with no path and no query: the notes index route answers only loopback, and its answer is
+/// trusted.
+fn is_loopback_origin(url: &str) -> bool {
+    let Ok(uri) = url.parse::<hyper::http::Uri>() else {
+        return false;
+    };
+    let host = uri
+        .host()
+        .unwrap_or_default()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    let loopback = host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback());
+    let bare = uri.path_and_query().is_none_or(|path| path.as_str() == "/");
+    uri.scheme_str() == Some("http") && loopback && bare
+}
+
 /// One startup-rule violation.
 ///
 /// Every member is `&'static str`, so a supplied value cannot appear in a failure report and the
@@ -397,15 +414,12 @@ fn validate(config: &SitesConfig) -> Vec<Violation> {
             rule: "must differ from the operator listener admin.bind",
         });
     }
-    let notes_url = config.notes.base_url.parse::<hyper::http::Uri>();
-    let plain_http = notes_url
-        .as_ref()
-        .is_ok_and(|uri| uri.scheme_str() == Some("http") && uri.host().is_some());
-    if !plain_http {
+    if !is_loopback_origin(&config.notes.base_url) {
         found.push(Violation {
             key: "notes.base_url",
             env_var: "RATATOSKR__NOTES__BASE_URL",
-            rule: "must be an http:// URL of the notes domain listener, e.g. http://127.0.0.1:8099",
+            rule: "must be the http:// origin of the loopback notes domain listener, with no path \
+                   and no query, e.g. http://127.0.0.1:8099",
         });
     }
     if !(1..=16).contains(&config.database.max_connections) {

@@ -5,8 +5,9 @@
 use figment::Figment;
 use ratatoskr_sites::config;
 
-/// The configuration with `base_url` as `RATATOSKR__NOTES__BASE_URL`.
-fn load(base_url: &str) -> Result<config::SitesConfig, config::ConfigError> {
+/// The report of the refusal of the configuration with `base_url` as
+/// `RATATOSKR__NOTES__BASE_URL`, or `None` when it loads.
+fn refusal(base_url: &str) -> Option<String> {
     config::load_from(
         &Figment::new()
             .merge((
@@ -15,6 +16,8 @@ fn load(base_url: &str) -> Result<config::SitesConfig, config::ConfigError> {
             ))
             .merge(("notes.base_url", base_url)),
     )
+    .err()
+    .map(|error| error.report())
 }
 
 #[test]
@@ -25,7 +28,7 @@ fn notes_base_url_is_a_loopback_origin() {
         "http://[::1]:8099",
         "http://localhost:8099",
     ] {
-        assert!(load(accepted).is_ok(), "{accepted} is accepted");
+        assert_eq!(refusal(accepted), None, "{accepted} is accepted");
     }
     for refused in [
         "http://192.0.2.10:8099",
@@ -35,12 +38,12 @@ fn notes_base_url_is_a_loopback_origin() {
         "https://127.0.0.1:8099",
         "127.0.0.1:8099",
     ] {
-        let error = load(refused).err();
+        let report = refusal(refused);
         assert!(
-            error
+            report
                 .as_ref()
-                .is_some_and(|error| error.report().contains("RATATOSKR__NOTES__BASE_URL")),
-            "{refused} is refused and the report names the variable: {error:?}"
+                .is_some_and(|report| report.contains("RATATOSKR__NOTES__BASE_URL")),
+            "{refused} is refused and the report names the variable: {report:?}"
         );
     }
 }

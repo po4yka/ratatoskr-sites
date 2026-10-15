@@ -151,14 +151,16 @@ impl Servable {
                 })
             })
         });
-        if shrunk && request_removal_build(database, site_id).await? {
-            self.wake(site_id);
-        }
+        // The set changes first, so the delivery stops the removed publication even when the
+        // request below cannot be written.
         if let Ok(mut sites) = self.sites.write() {
             match serving {
                 Some(serving) => sites.insert(site_id.to_owned(), serving),
                 None => sites.remove(site_id),
             };
+        }
+        if shrunk && request_removal_build(database, site_id).await? {
+            self.wake(site_id);
         }
         Ok(())
     }

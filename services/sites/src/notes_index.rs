@@ -82,7 +82,7 @@ impl HttpNotesIndex {
             .map_err(|_| IndexError::Unavailable)?;
         match response.status() {
             StatusCode::OK => {}
-            StatusCode::NOT_FOUND => return Err(IndexError::ConnectionNotFound),
+            StatusCode::NOT_FOUND => return Err(not_found(response).await),
             status => {
                 tracing::warn!(%status, %connection_id, "the notes index answered an error");
                 return Err(IndexError::Unavailable);
@@ -96,6 +96,32 @@ impl HttpNotesIndex {
         let answer: FilesAnswer =
             serde_json::from_slice(&body).map_err(|_| IndexError::Unavailable)?;
         Ok(answer.files)
+    }
+}
+
+/// The largest error answer that the index reads.
+const MAX_ERROR_BYTES: usize = 4096;
+
+/// The code of the 404 of notes for a connection that does not exist.
+const CONNECTION_NOT_FOUND: &str = "notes.connection.not_found";
+
+/// What a 404 of notes means: a missing connection only when its body is the envelope with the
+/// code `notes.connection.not_found`. Any other 404, for example the empty answer of an unknown
+/// route, says nothing about the connection.
+async fn not_found(response: hyper::Response<hyper::body::Incoming>) -> IndexError {
+    let Ok(body) = Limited::new(response.into_body(), MAX_ERROR_BYTES)
+        .collect()
+        .await
+    else {
+        return IndexError::Unavailable;
+    };
+    let code = serde_json::from_slice::<serde_json::Value>(&body.to_bytes())
+        .ok()
+        .and_then(|envelope| envelope.get("code")?.as_str().map(str::to_owned));
+    if code.as_deref() == Some(CONNECTION_NOT_FOUND) {
+        IndexError::ConnectionNotFound
+    } else {
+        IndexError::Unavailable
     }
 }
 
