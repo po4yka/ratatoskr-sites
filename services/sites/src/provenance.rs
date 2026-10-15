@@ -206,10 +206,10 @@ impl Provenance {
         }
     }
 
-    /// The projection of `source` that the release keeps: only what rendering reads. A link or
-    /// embed only when the release publishes its target, and the frontmatter keys that its
-    /// publications allow with `slug`, never `publish`. No tag, heading or block id: the selection
-    /// inputs are the columns `names_site` and `selection_tags`.
+    /// The projection of `source` that the release keeps: only what rendering reads. The links and
+    /// embeds that its page resolved, and the frontmatter keys that its page rendered with `slug`,
+    /// never `publish`. No tag, heading or block id: the selection inputs are the columns
+    /// `names_site` and `selection_tags`.
     fn projection(&self, source: &Source) -> IndexedFile {
         let published = |target: &Option<String>| {
             target.as_ref().is_some_and(|target| {
@@ -294,6 +294,11 @@ impl Provenance {
                 .await?;
             }
         }
+        // An asset that no attachment of this build names keeps no publication of an earlier one.
+        sqlx::query("update sites.release_assets set publication_ids = '{}' where release_id = $1")
+            .bind(release_id)
+            .execute(&mut *connection)
+            .await?;
         for (digest, publications) in self.assets(built) {
             sqlx::query(
                 "update sites.release_assets set publication_ids = $3 \

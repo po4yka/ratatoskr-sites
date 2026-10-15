@@ -468,16 +468,20 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .begin()
                 .await
                 .map_err(BuildFailure::Database)?;
-            lock_current(&mut transaction, site_id).await?;
-            provenance
-                .rewrite(&mut transaction, &release_id, built)
-                .await
-                .map_err(BuildFailure::Database)?;
-            transaction.commit().await.map_err(BuildFailure::Database)?;
-            return Ok(BuildOutcome {
-                release_id,
-                new_release: false,
-            });
+            // Read again under the lock: another build may have switched the site meanwhile.
+            let locked = lock_current(&mut transaction, site_id).await?;
+            if locked.as_deref() == Some(release_id.as_str()) {
+                provenance
+                    .rewrite(&mut transaction, &release_id, built)
+                    .await
+                    .map_err(BuildFailure::Database)?;
+                transaction.commit().await.map_err(BuildFailure::Database)?;
+                return Ok(BuildOutcome {
+                    release_id,
+                    new_release: false,
+                });
+            }
+            // It is no longer current: the transaction ends, and this build switches to it below.
         }
         for page in &built.pages {
             let hex = ratatoskr_sites_release::sha256_hex(&page.bytes);
@@ -653,18 +657,20 @@ pub(crate) async fn report(
 }
 
 /// Lock the current-release row of `site_id` until the transaction ends, so the provenance of a
-/// release and the switch to it are written by one build at a time. A site without a release has
-/// no row; the one build worker is then the only writer.
+/// release and the switch to it are written by one build at a time, and answer the current release
+/// as the lock sees it. A site without a release has no row; the one build worker is then the only
+/// writer.
 async fn lock_current(
     transaction: &mut sqlx::PgConnection,
     site_id: &str,
-) -> Result<(), BuildFailure> {
-    sqlx::query("select 1 from sites.current_releases where site_id = $1 for update")
-        .bind(site_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(BuildFailure::Database)?;
-    Ok(())
+) -> Result<Option<String>, BuildFailure> {
+    sqlx::query_scalar(
+        "select release_id from sites.current_releases where site_id = $1 for update",
+    )
+    .bind(site_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(BuildFailure::Database)
 }
 
 /// The longest message of an operation report, in UTF-8 bytes (`SafeMessage`).

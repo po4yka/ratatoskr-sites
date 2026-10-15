@@ -162,9 +162,10 @@ create table sites.release_sources (
     release_id     text not null references sites.releases (release_id) on delete cascade,
     connection_id  uuid not null,
     path           text not null,
-    -- The file as the notes index gave it to the build (`IndexedFile`, with its revision `BlobRef`):
-    -- a removal build rebuilds from these files and never reads the notes index, so it publishes
-    -- no note change that the owner did not release.
+    -- A projection of the file that the build read (`IndexedFile`, with its revision `BlobRef`):
+    -- the links and embeds that its page resolved and the frontmatter keys that its page rendered,
+    -- with `slug`. A build from the release reads these files and never the notes index, so it
+    -- publishes no note change that the owner did not release.
     file           jsonb not null,
     -- The publications that published the file: for a note those that selected it, for an
     -- attachment those that selected a note that uses it and do not exclude it. Never empty. A
