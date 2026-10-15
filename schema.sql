@@ -166,9 +166,10 @@ create table sites.release_sources (
     -- a removal build rebuilds from these files and never reads the notes index, so it publishes
     -- no note change that the owner did not release.
     file           jsonb not null,
-    -- The publications that selected the note; empty for an attachment. A build from the release
-    -- takes exactly these rows for each publication and does not select again.
-    publication_ids text[] not null default '{}',
+    -- The publications that published the file: for a note those that selected it, for an
+    -- attachment those that selected a note that uses it and do not exclude it. Never empty. A
+    -- build from the release gives a publication only the rows that name it.
+    publication_ids text[] not null check (cardinality(publication_ids) > 0),
     -- The selection inputs of a note, limited to published facts: whether its `publish` value
     -- named the site, and its tags (lower case, without `#`) that matched an included tag of a
     -- selecting publication. A build from the release selects again with the current

@@ -22,7 +22,8 @@ struct Source {
     file: IndexedFile,
     /// The frontmatter keys that the publications that select the note allow.
     keys: BTreeSet<String>,
-    /// The publications that select the note; none for an attachment.
+    /// The publications that publish the file: for a note those that select it, for an attachment
+    /// those that select a note that uses it and do not exclude it.
     publications: BTreeSet<String>,
     /// Whether the `publish` value of the note names the site: `true`, the site id, or a list
     /// with the site id.
@@ -195,8 +196,8 @@ impl Provenance {
 
     /// The projection of `source` that the release keeps: only what rendering reads. A link or
     /// embed only when the release publishes its target, and the frontmatter keys that its
-    /// publications allow with `slug`. No `publish` value, tag, heading or block id: a build from
-    /// the release does not select again, it takes the notes that each publication selected.
+    /// publications allow with `slug`, never `publish`. No tag, heading or block id: the selection
+    /// inputs are the columns `names_site` and `selection_tags`.
     fn projection(&self, source: &Source) -> IndexedFile {
         let published = |target: &Option<String>| {
             target.as_ref().is_some_and(|target| {
@@ -214,7 +215,7 @@ impl Provenance {
         file.frontmatter = file.frontmatter.map(|frontmatter| {
             frontmatter
                 .into_iter()
-                .filter(|(key, _)| key == "slug" || source.keys.contains(key))
+                .filter(|(key, _)| key == "slug" || (key != "publish" && source.keys.contains(key)))
                 .collect()
         });
         file
