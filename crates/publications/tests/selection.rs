@@ -199,3 +199,74 @@ fn obsidian_folder_is_never_selected() -> Outcome {
     );
     Ok(())
 }
+
+/// A Markdown file at `path` with `publish: true`.
+fn flagged_note(path: &str) -> Result<IndexedFile, Box<dyn std::error::Error>> {
+    let frontmatter = serde_json::json!({ "publish": true });
+    Ok(IndexedFile {
+        path: path.to_owned(),
+        revision: ratatoskr_sites_publications::test_support::revision_of(
+            path.as_bytes(),
+            "text/markdown",
+        )?,
+        frontmatter: frontmatter.as_object().cloned(),
+        tags: Vec::new(),
+        headings: Vec::new(),
+        blocks: Vec::new(),
+        links: Vec::new(),
+        embeds: Vec::new(),
+    })
+}
+
+#[test]
+fn excluded_folder_matches_without_case() -> Outcome {
+    // Folders compare by the path key of ratatoskr-notes: NFC and Unicode default case folding.
+    let files = [flagged_note("private/x.md")?, flagged_note("blog/y.md")?];
+    let publication = publication(
+        "site-a",
+        "pub-case",
+        PublicationMode::Flagged,
+        &[],
+        &["Private"],
+        &[],
+    )?;
+    assert_eq!(
+        select(&publication, &files),
+        set(&["blog/y.md"]),
+        "the excluded folder Private excludes private/x.md"
+    );
+    Ok(())
+}
+
+#[test]
+fn folder_matches_in_nfc() -> Outcome {
+    // The vault path is in NFC; the owner wrote the folder name in NFD.
+    let files = [flagged_note("Caf\u{e9}/x.md")?, flagged_note("blog/y.md")?];
+    let included = publication(
+        "site-a",
+        "pub-nfc",
+        PublicationMode::Flagged,
+        &["Cafe\u{301}"],
+        &[],
+        &[],
+    )?;
+    assert_eq!(
+        select(&included, &files),
+        set(&["Caf\u{e9}/x.md"]),
+        "the included folder in NFD includes the NFC path"
+    );
+    let excluded = publication(
+        "site-a",
+        "pub-nfc-excluded",
+        PublicationMode::Flagged,
+        &[],
+        &["Cafe\u{301}"],
+        &[],
+    )?;
+    assert_eq!(
+        select(&excluded, &files),
+        set(&["blog/y.md"]),
+        "the excluded folder in NFD excludes the NFC path"
+    );
+    Ok(())
+}

@@ -37,3 +37,5 @@
 
 - [x] 8.1 RED (5.21a): add `services/sites/tests/release_build.rs::blob_over_the_bound_fails_with_blob_length`, which builds through a `ReleaseBuilder` whose reader has no bound of its own, with an attachment of 64 MiB and one byte. Confirm that the class assertion fails because the build reads it and succeeds.
 - [x] 8.2 GREEN (5.21a): `ReleaseBuilder::new` applies the production bound of 64 MiB itself. Verify 8.1.
+- [ ] 8.3 RED (5.21b): add `selection.rs::excluded_folder_matches_without_case` (the excluded folder `Private` excludes `private/x.md`) and `selection.rs::folder_matches_in_nfc` (a folder written in NFD includes and excludes the NFC path). Confirm that the set assertions fail because folders compare byte for byte.
+- [ ] 8.4 GREEN (5.21b): compare folders and paths by the path key of `ratatoskr-notes` (NFC, then Unicode default case folding), in the selection and in the attachments that a publication may publish. Verify 8.3.
