@@ -11,8 +11,7 @@ use ratatoskr_sites_publications::{
     BuildError, IndexedFile, assign_slugs, select, tag_key, tag_matches,
 };
 use ratatoskr_sites_release::{
-    Built, DEFAULT_FRONTMATTER_ALLOWLIST, PublicationInput, SiteInput, may_publish_attachment,
-    selected_notes,
+    Built, PublicationInput, SiteInput, may_publish_attachment, selected_notes,
 };
 use serde_json::Value;
 use sqlx::PgConnection;
@@ -23,7 +22,7 @@ use uuid::Uuid;
 struct Source {
     connection: Uuid,
     file: IndexedFile,
-    /// The frontmatter keys that the publications that select the note allow.
+    /// The frontmatter keys that the page of the note rendered in this release.
     keys: BTreeSet<String>,
     /// The publications that publish the file: for a note those that select it, for an attachment
     /// those that select a note that uses it and do not exclude it.
@@ -62,10 +61,6 @@ impl Provenance {
         for ((connection_id, publication_id), input) in publications.iter().zip(&site.publications)
         {
             let chosen = select(&input.publication, input.files);
-            let keys = DEFAULT_FRONTMATTER_ALLOWLIST
-                .iter()
-                .map(|&key| key.to_owned())
-                .chain(input.frontmatter_allow.iter().cloned());
             for file in input
                 .files
                 .iter()
@@ -91,7 +86,6 @@ impl Provenance {
                 let Some(source) = sources.iter_mut().find(|source| same(source)) else {
                     continue;
                 };
-                source.keys.extend(keys.clone());
                 source.publications.insert(publication_id.clone());
                 source.names_site = names_site(file, site.site_id.as_str());
                 source
@@ -141,6 +135,11 @@ impl Provenance {
                 .and_then(|slug| rendered.get(slug.as_str()));
             source.file.links = page.map_or_else(Vec::new, |page| page.resolved_links.clone());
             source.file.embeds = page.map_or_else(Vec::new, |page| page.resolved_embeds.clone());
+            // Only the keys that the page rendered: a build from the release renders those that
+            // the current allowlist still allows, and never a key that the page did not show.
+            source.keys = page.map_or_else(BTreeSet::new, |page| {
+                page.page.frontmatter.keys().cloned().collect()
+            });
         }
         let assets: BTreeSet<&str> = built
             .assets

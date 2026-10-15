@@ -166,9 +166,11 @@ that you add to the frontmatter allowlist of a manual publication appears only w
 that you request; for an automatic publication it also appears with the next change of one of its
 notes.
 
-The service keeps, for each published note, the frontmatter fields that any publication that
-selected it allowed. A page shows only the fields of the current allowlist of the publication that
-shows it, among those kept. When you narrow a publication (an excluded folder, a tag that you no
+The service keeps, for each published note, only the frontmatter fields that its page showed. A
+build that the service starts from the current release (after a removal, or for a manual
+publication when an automatic one changes) shows only those fields that the current allowlist still
+allows, so it never shows a field that the page did not show. A field that you add to an allowlist
+appears with the next build that reads the notes. When you narrow a publication (an excluded folder, a tag that you no
 longer include) the next build drops its notes, also a build that the service starts after a
 removal; a build from the release never adds a note.
 

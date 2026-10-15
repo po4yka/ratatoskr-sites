@@ -189,6 +189,15 @@ makes an ordinary build, because the command or the automatic mode releases new 
 - An attachment row names the publications that selected a note that uses it and that do not
   exclude it; the asset of the release carries the same publications. A schema CHECK refuses a row
   without publications.
-- The stored frontmatter of a note holds the union of the allowlists of the publications that
-  selected it (never `publish`). A page renders only the frontmatter keys of the current allowlist
-  of the publication that renders it, among the stored ones.
+- The stored frontmatter of a note holds only the keys that its page rendered in the release (and
+  `slug`; never `publish`); corrected in design 17.
+
+### 17. Seventh review (workspace tasks 5.81 to 5.86)
+
+- Whenever a build makes a release whose row exists, current or earlier, the transaction of the
+  switch writes its provenance again (source rows, and the publications of pages, search rows and
+  assets), after a lock of the current-release row of the site.
+- The stored frontmatter of a note holds only the keys that its page rendered, and `slug`. A build
+  from the release renders those that the current allowlist of the rendering publication still
+  allows: never a key that the page did not show. A wider allowlist applies with the next build
+  that reads the notes index.
