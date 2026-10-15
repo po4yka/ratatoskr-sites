@@ -29,6 +29,8 @@ pub(crate) struct Provenance {
     sources: Vec<Source>,
     /// The publications of each page, by slug, in ascending order.
     pages: BTreeMap<String, Vec<String>>,
+    /// The slug of each published note, by vault path.
+    slugs: BTreeMap<String, String>,
 }
 
 impl Provenance {
@@ -78,25 +80,49 @@ impl Provenance {
                 source.publications.insert(publication_id.clone());
             }
         }
-        let pages = assign_slugs(&selected_notes(site))?
+        let assigned = assign_slugs(&selected_notes(site))?;
+        let slugs = assigned
+            .iter()
+            .map(|(slug, path)| (path.clone(), slug.as_str().to_owned()))
+            .collect();
+        let pages = assigned
             .into_iter()
             .map(|(slug, path)| {
                 let publications = by_path.get(&path).cloned().unwrap_or_default();
                 (slug.as_str().to_owned(), publications.into_iter().collect())
             })
             .collect();
-        Ok(Self { sources, pages })
+        Ok(Self {
+            sources,
+            pages,
+            slugs,
+        })
     }
 
-    /// Add the attachments that `built` publishes: a file that is not Markdown, that a published
-    /// note links to or embeds (the target that the notes resolver found), and whose bytes are an
-    /// asset of the release. A copy with the same bytes at another path is never added.
-    pub(crate) fn add_attachments(
+    /// Take from `built` what rendering resolved: each published note keeps only the links and
+    /// embeds that its page resolved (a link inside a comment never is), and the attachments are
+    /// added that such a link or embed names (the target that the notes resolver found) and whose
+    /// bytes are an asset of the release. A copy with the same bytes at another path is never
+    /// added.
+    pub(crate) fn add_rendered(
         &mut self,
         publications: &[(Uuid, String)],
         site: &SiteInput<'_>,
         built: &Built,
     ) {
+        let rendered: BTreeMap<&str, &ratatoskr_sites_release::BuiltPage> = built
+            .pages
+            .iter()
+            .map(|page| (page.page.slug.as_str(), page))
+            .collect();
+        for source in &mut self.sources {
+            let page = self
+                .slugs
+                .get(&source.file.path)
+                .and_then(|slug| rendered.get(slug.as_str()));
+            source.file.links = page.map_or_else(Vec::new, |page| page.resolved_links.clone());
+            source.file.embeds = page.map_or_else(Vec::new, |page| page.resolved_embeds.clone());
+        }
         let assets: BTreeSet<&str> = built
             .assets
             .iter()

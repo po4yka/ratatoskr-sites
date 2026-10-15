@@ -11,6 +11,7 @@
 //! Comments were removed from the text before the parse, so a link inside a comment is not in the
 //! tree and makes no edge, also when the index lists it.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use ratatoskr_identifiers::BlobRef;
@@ -28,6 +29,9 @@ pub(crate) struct Scope<'a> {
     pub(crate) pages: &'a BTreeMap<String, (Slug, PageTitle)>,
     /// The attachments that the publication may publish: vault path to blob.
     pub(crate) attachments: &'a BTreeMap<String, BlobRef>,
+    /// The index entries that the filter resolved to a page or an asset, `true` for an embed, with
+    /// no display text: what a later build from the release needs, and nothing of a comment.
+    pub(crate) resolved: RefCell<Vec<(bool, IndexedLink)>>,
 }
 
 /// What a reference names after the filter.
@@ -147,7 +151,7 @@ fn link(
             Err(_) => children,
         };
     }
-    match resolve(&scope.file.links, url, scope) {
+    match resolve(&scope.file.links, url, scope, false) {
         Target::Page(slug, anchor, _) => vec![Node::PageLink {
             slug,
             anchor,
@@ -171,7 +175,7 @@ fn embed(url: &str, title: &str, wiki: bool, children: &[Node], scope: &Scope<'_
             title: (!title.is_empty()).then(|| title.to_owned()),
         });
     }
-    match resolve(&scope.file.embeds, url, scope) {
+    match resolve(&scope.file.embeds, url, scope, true) {
         Target::Page(slug, anchor, title) => Some(Node::PageEmbed {
             slug,
             anchor,
@@ -190,22 +194,39 @@ fn asset(blob: &BlobRef, alt: Option<String>) -> Node {
 }
 
 /// The target of the reference `written` that the notes index of the file lists.
-fn resolve<'a>(listed: &[IndexedLink], written: &str, scope: &Scope<'a>) -> Target<'a> {
+fn resolve<'a>(
+    listed: &[IndexedLink],
+    written: &str,
+    scope: &Scope<'a>,
+    embed: bool,
+) -> Target<'a> {
     let decoded = percent_decoded(written);
-    let Some(path) = listed
+    let Some(entry) = listed
         .iter()
         .find(|entry| entry.link == written || entry.link == decoded)
-        .and_then(|entry| entry.target.as_deref())
     else {
         return Target::Nothing;
     };
-    if let Some((slug, title)) = scope.pages.get(path) {
-        return Target::Page(slug.clone(), anchor_of(&decoded), title.clone());
+    let Some(path) = entry.target.as_deref() else {
+        return Target::Nothing;
+    };
+    let target = if let Some((slug, title)) = scope.pages.get(path) {
+        Target::Page(slug.clone(), anchor_of(&decoded), title.clone())
+    } else {
+        match scope.attachments.get(path) {
+            Some(blob) => Target::Asset(blob),
+            None => return Target::Nothing,
+        }
+    };
+    let kept = IndexedLink {
+        display_text: String::new(),
+        ..entry.clone()
+    };
+    let mut resolved = scope.resolved.borrow_mut();
+    if !resolved.contains(&(embed, kept.clone())) {
+        resolved.push((embed, kept));
     }
-    match scope.attachments.get(path) {
-        Some(blob) => Target::Asset(blob),
-        None => Target::Nothing,
-    }
+    target
 }
 
 /// The anchor of the subpath of a reference: `#^id` is the block `^id`, `#Heading` the heading.

@@ -26,7 +26,7 @@ use ratatoskr_sites_contracts::{
     PublicationId, Release, ReleaseAsset, ReleasePage, SiteId, Slug,
 };
 use ratatoskr_sites_publications::{
-    BuildError, IndexedFile, Publication, assign_slugs, in_folder, select,
+    BuildError, IndexedFile, IndexedLink, Publication, assign_slugs, in_folder, select,
 };
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
@@ -92,6 +92,11 @@ pub struct BuiltPage {
     pub page: Page,
     /// The stored bytes of the page document: the `serde_json` form of `page`.
     pub bytes: Vec<u8>,
+    /// The links of the note that the filter resolved to a page or an asset, without display
+    /// text. A link inside a comment is never here.
+    pub resolved_links: Vec<IndexedLink>,
+    /// The embeds of the note that the filter resolved, as `resolved_links`.
+    pub resolved_embeds: Vec<IndexedLink>,
 }
 
 /// What a build makes: the release document, its pages and the assets that its pages use.
@@ -183,6 +188,8 @@ struct Rendered {
     links: BTreeSet<Slug>,
     assets: BTreeMap<String, AssetRef>,
     blobs: Vec<BlobRef>,
+    resolved_links: Vec<IndexedLink>,
+    resolved_embeds: Vec<IndexedLink>,
 }
 
 fn render_note(
@@ -210,9 +217,15 @@ fn render_note(
         file: note.file,
         pages: &pages,
         attachments: &attachments,
+        resolved: std::cell::RefCell::new(Vec::new()),
     };
     let body = source::without_comments(source::body_of(text));
     let tree = filter::filter(tree::parse(&body), &scope);
+    let (resolved_embeds, resolved_links): (Vec<_>, Vec<_>) = scope
+        .resolved
+        .take()
+        .into_iter()
+        .partition(|(embed, _)| *embed);
 
     let mut links = BTreeSet::new();
     let mut used: BTreeMap<String, BlobRef> = BTreeMap::new();
@@ -251,6 +264,8 @@ fn render_note(
         links,
         assets,
         blobs,
+        resolved_links: resolved_links.into_iter().map(|(_, link)| link).collect(),
+        resolved_embeds: resolved_embeds.into_iter().map(|(_, link)| link).collect(),
     })
 }
 
@@ -378,6 +393,7 @@ fn assemble(site: &SiteInput<'_>, mut rendered: Vec<Rendered>) -> Result<Built, 
                 .entry(blob.digest.hex.as_str().to_owned())
                 .or_insert_with(|| blob.clone());
         }
+        let (resolved_links, resolved_embeds) = (page.resolved_links, page.resolved_embeds);
         let page = Page {
             backlinks: backlinks
                 .remove(&page.slug)
@@ -393,7 +409,12 @@ fn assemble(site: &SiteInput<'_>, mut rendered: Vec<Rendered>) -> Result<Built, 
             assets: page.assets.into_values().collect(),
         };
         let bytes = serde_json::to_vec(&page).map_err(|_| invalid(page.slug.as_str()))?;
-        pages.push(BuiltPage { page, bytes });
+        pages.push(BuiltPage {
+            page,
+            bytes,
+            resolved_links,
+            resolved_embeds,
+        });
     }
     let release = release_document(site, &pages, &blobs)?;
     Ok(Built {

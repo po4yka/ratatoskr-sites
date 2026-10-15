@@ -79,7 +79,9 @@ pub enum LinkForm {
 pub struct IndexedLink {
     /// The target with its subpath, in NFC, as the note writes it: `Beta#Section One`.
     pub link: String,
-    /// The text that Obsidian shows for the link.
+    /// The text that Obsidian shows for the link. Not stored with the sources of a release, which
+    /// rendering does not read it from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub display_text: String,
     /// How the link is written.
     pub form: LinkForm,

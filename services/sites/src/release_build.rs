@@ -337,7 +337,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .collect();
         let mut provenance = Provenance::of(&publications, &site).map_err(BuildFailure::Build)?;
         let built = self.render(&site).await?;
-        provenance.add_attachments(&publications, &site, &built);
+        provenance.add_rendered(&publications, &site, &built);
         self.store(site_id, owner, &built, &provenance).await
     }
 
