@@ -277,16 +277,22 @@ fn publishable_attachments(
 ) -> BTreeMap<String, BlobRef> {
     files
         .iter()
-        .filter(|file| !file.is_markdown())
-        .filter(|file| {
-            !in_folder(&file.path, ".obsidian")
-                && !publication
-                    .excluded_folders
-                    .iter()
-                    .any(|folder| in_folder(&file.path, folder))
-        })
+        .filter(|file| may_publish_attachment(publication, file))
         .map(|file| (file.path.clone(), file.revision.clone()))
         .collect()
+}
+
+/// Whether `publication` may publish `file`, one of its own files, as an attachment when a
+/// selected page uses it: a file that is not Markdown, not under `.obsidian/` and not in an
+/// excluded folder. The one rule of the builder and of the sources of a release.
+#[must_use]
+pub fn may_publish_attachment(publication: &Publication, file: &IndexedFile) -> bool {
+    !file.is_markdown()
+        && !in_folder(&file.path, ".obsidian")
+        && !publication
+            .excluded_folders
+            .iter()
+            .any(|folder| in_folder(&file.path, folder))
 }
 
 /// The slugs that the filtered tree links to or embeds, and the assets that it embeds.

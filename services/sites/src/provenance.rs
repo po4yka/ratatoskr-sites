@@ -7,10 +7,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ratatoskr_sites_publications::{
-    BuildError, IndexedFile, Publication, assign_slugs, in_folder, select,
+use ratatoskr_sites_publications::{BuildError, IndexedFile, assign_slugs, select};
+use ratatoskr_sites_release::{
+    Built, DEFAULT_FRONTMATTER_ALLOWLIST, PublicationInput, SiteInput, may_publish_attachment,
+    selected_notes,
 };
-use ratatoskr_sites_release::{Built, DEFAULT_FRONTMATTER_ALLOWLIST, SiteInput, selected_notes};
 use serde_json::Value;
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -165,15 +166,16 @@ impl Provenance {
                 let Some(selecting) = targets.get(&(*connection_id, file.path.clone())) else {
                     continue;
                 };
-                // Only a publication that selected a note that uses the attachment, and that does
-                // not exclude it, publishes it.
+                // Only a publication that selected a note that uses the attachment, that has the
+                // attachment among its own files (for a publication read from the release, the
+                // attachments that it published), and that may publish it, publishes it.
                 let allowing: BTreeSet<String> = publications
                     .iter()
                     .zip(&site.publications)
                     .filter(|((connection, id), other)| {
                         connection == connection_id
                             && selecting.contains(id)
-                            && allows(&other.publication, &file.path)
+                            && publishes_attachment(other, &file.path)
                     })
                     .map(|((_, id), _)| id.clone())
                     .collect();
@@ -310,12 +312,10 @@ fn matched_tags(file: &IndexedFile, included: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Whether `publication` may publish the attachment `path`: not under `.obsidian/` and not in an
-/// excluded folder, as the release builder decides.
-fn allows(publication: &Publication, path: &str) -> bool {
-    !in_folder(path, ".obsidian")
-        && !publication
-            .excluded_folders
-            .iter()
-            .any(|folder| in_folder(path, folder))
+/// Whether `input` has the attachment `path` among its own files and may publish it.
+fn publishes_attachment(input: &PublicationInput<'_>, path: &str) -> bool {
+    input
+        .files
+        .iter()
+        .any(|own| own.path == path && may_publish_attachment(&input.publication, own))
 }
