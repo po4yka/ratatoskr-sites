@@ -115,6 +115,37 @@ impl Fixture {
         Ok(fixture)
     }
 
+    /// Make `manifest` the active and the approved manifest of the site, without events.
+    pub(crate) async fn approve_directly(
+        &self,
+        manifest: &bus::TestManifest,
+    ) -> Result<(), Failure> {
+        sqlx::query("update sites.site_manifests set is_active = false where site_id = $1")
+            .bind(SITE)
+            .execute(self.database.pool())
+            .await?;
+        sqlx::query(
+            "insert into sites.site_manifests (site_id, digest, manifest, submitted_at, \
+             is_active) values ($1, $2, $3, now(), true)",
+        )
+        .bind(SITE)
+        .bind(manifest.digest())
+        .bind(manifest.bytes())
+        .execute(self.database.pool())
+        .await?;
+        sqlx::query(
+            "update sites.approval_projection set approved_digest = $2, capabilities = $3, \
+             hostname = $4 where site_id = $1",
+        )
+        .bind(SITE)
+        .bind(manifest.digest())
+        .bind(&manifest.capabilities)
+        .bind(&manifest.hostname)
+        .execute(self.database.pool())
+        .await?;
+        Ok(())
+    }
+
     /// The manifest that [`Fixture::new`] submits and approves.
     pub(crate) fn approved_manifest() -> bus::TestManifest {
         bus::TestManifest::of(
