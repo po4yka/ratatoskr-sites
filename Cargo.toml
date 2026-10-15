@@ -23,15 +23,17 @@ ratatoskr-sites-release      = { version = "0.1.0", path = "crates/release" }
 # ---- fleet contracts ----
 # One revision for every `ratatoskr-*` git dependency: Cargo treats two revisions of one git
 # repository as two different crates, so a mixed pin would split the shared types in two.
-# df646b0b is the contracts commit that holds `ratatoskr-sites-contracts` (SITE-025, group 3):
-# `sites/site-manifest.v1`, `sites/release.v1`, `sites/page.v1` and the site messages.
-ratatoskr-identifiers     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
-ratatoskr-sites-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
+# 2c726027 is the one contracts revision of the whole fleet (workspace check
+# every_rust_repository_resolves_one_contracts_revision). It holds `ratatoskr-sites-contracts`
+# (SITE-025, group 3): `sites/site-manifest.v1`, `sites/release.v1`, `sites/page.v1` and the site
+# messages.
+ratatoskr-identifiers     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
+ratatoskr-sites-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
 # The envelope of the outbox rows, and the operation report `platform.operation.reported.v1` of a
 # build (workspace spec site-publications, "A build is one operation of the sites lane").
-ratatoskr-event-envelope      = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
-ratatoskr-error-contracts     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
-ratatoskr-operation-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
+ratatoskr-event-envelope      = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
+ratatoskr-error-contracts     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
+ratatoskr-operation-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
 
 # ---- persistence ----
 # No `migrate` feature: the schema is one file, `include_str!`d into the binary by
