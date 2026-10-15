@@ -83,9 +83,14 @@ async fn every_source_row_names_its_publications() -> Outcome {
     .bind(fixture.index.connection())
     .execute(fixture.database.pool())
     .await;
-    assert!(
-        inserted.is_err(),
-        "the schema refuses a source row without publications"
+    let code = match &inserted {
+        Err(sqlx::Error::Database(error)) => error.code().map(std::borrow::Cow::into_owned),
+        _ => None,
+    };
+    assert_eq!(
+        code.as_deref(),
+        Some("23514"),
+        "the CHECK of the schema refuses a source row without publications: {inserted:?}"
     );
     fixture.cleanup().await
 }
@@ -106,5 +111,40 @@ async fn stored_frontmatter_holds_no_publish() -> Outcome {
         with_publish, 0,
         "the stored frontmatter holds no publish value, also when the allowlist names it"
     );
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn page_frontmatter_holds_no_publish() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set frontmatter_allow = '{publish}'")
+        .execute(fixture.database.pool())
+        .await?;
+    fixture.builder().build(&request(None)).await?;
+    // A build from the release, as the worker runs one for removal requests only.
+    fixture
+        .builder()
+        .build_job(&ratatoskr_sites::release_build::BuildJob {
+            site_id: support::SITE.to_owned(),
+            operation_ids: Vec::new(),
+            explicit: false,
+            retried: Vec::new(),
+            from_release: true,
+        })
+        .await?;
+    let digests: Vec<String> =
+        sqlx::query_scalar("select distinct page_digest from sites.release_pages")
+            .fetch_all(fixture.database.pool())
+            .await?;
+    assert!(!digests.is_empty(), "the builds made pages");
+    for digest in digests {
+        let bytes = std::fs::read(support::blob_path(fixture.sites_root.path(), &digest)?)?;
+        let page: ratatoskr_sites_contracts::Page = serde_json::from_slice(&bytes)?;
+        assert!(
+            !page.frontmatter.contains_key("publish"),
+            "a page never renders publish, also when the allowlist names it: {}",
+            page.slug.as_str()
+        );
+    }
     fixture.cleanup().await
 }
