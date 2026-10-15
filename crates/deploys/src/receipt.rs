@@ -161,12 +161,14 @@ fn unpack(
         if received.contains_key(&path) {
             return Err(DeployError::UnsafePath(path));
         }
-        let size = entry.header().size().map_err(invalid)?;
-        total = total.saturating_add(size);
-        if total > max_bytes {
+        // `entry.size()` is the length after a PAX `size` record; the ustar field alone is not.
+        // The bytes that `store` writes are counted too, so no header can pass the limit.
+        let budget = max_bytes.saturating_sub(total);
+        if entry.size() > budget {
             return Err(DeployError::TooLarge);
         }
-        let file = store(staging, &path, &mut entry)?;
+        let file = store(staging, &path, &mut entry, budget)?;
+        total = total.saturating_add(file.0);
         received.insert(path, file);
     }
     let manifest = manifest.ok_or_else(|| {
@@ -189,9 +191,14 @@ pub(crate) fn checked(path: &str) -> Result<String, DeployError> {
     Ok(path.to_owned())
 }
 
-/// Write the bytes of `entry` to `files/<path>` under `staging`, and give back their length and
-/// their SHA-256.
-fn store(staging: &Path, path: &str, entry: &mut impl Read) -> Result<(u64, String), DeployError> {
+/// Write the bytes of `entry` to `files/<path>` under `staging`, at most `budget` bytes, and give
+/// back their length and their SHA-256.
+fn store(
+    staging: &Path,
+    path: &str,
+    entry: &mut impl Read,
+    budget: u64,
+) -> Result<(u64, String), DeployError> {
     let target = staging.join(FILES).join(path);
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(DeployError::Storage)?;
@@ -213,6 +220,9 @@ fn store(staging: &Path, path: &str, entry: &mut impl Read) -> Result<(u64, Stri
         hasher.update(chunk);
         file.write_all(chunk).map_err(DeployError::Storage)?;
         written = written.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+        if written > budget {
+            return Err(DeployError::TooLarge);
+        }
     }
     file.sync_all().map_err(DeployError::Storage)?;
     Ok((written, hex(&hasher.finalize())))
