@@ -308,6 +308,33 @@ impl Fixture {
         Ok(())
     }
 
+    /// Add the file `path` with the bytes `bytes` and the media type `media_type`, which no note
+    /// links to, to the connection.
+    pub(crate) fn add_file(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        media_type: &str,
+    ) -> Result<(), Failure> {
+        let revision = revision_of(bytes, media_type)?;
+        store(self.notes_root.path(), bytes, revision.digest.hex.as_str())?;
+        self.index
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?
+            .push(IndexedFile {
+                path: path.to_owned(),
+                revision,
+                frontmatter: None,
+                tags: Vec::new(),
+                headings: Vec::new(),
+                blocks: Vec::new(),
+                links: Vec::new(),
+                embeds: Vec::new(),
+            });
+        Ok(())
+    }
+
     /// The payloads of the operation reports in the outbox.
     pub(crate) async fn reports(&self) -> Result<Vec<serde_json::Value>, Failure> {
         Ok(sqlx::query_scalar(
