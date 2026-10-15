@@ -15,5 +15,5 @@
 
 ## 4. Verified note reads (workspace tasks 5.8, 5.9)
 
-- [ ] 4.1 RED: add `services/sites/tests/notes_blob_read.rs` with `notes_blob_ref_is_verified_before_use` and `foreign_owner_ref_is_refused`, and a stub reader that returns the bytes unchecked. Run them and confirm that the class assertion of the first fails because the reader returns the bytes unchecked.
-- [ ] 4.2 GREEN: read note bytes read-only from the notes root and verify the owner, the algorithm, the digest, the length and a fresh hash, as `blob-references` requires. Verify 4.1.
+- [x] 4.1 RED: add `services/sites/tests/notes_blob_read.rs` with `notes_blob_ref_is_verified_before_use` and `foreign_owner_ref_is_refused`, and a stub reader that returns the bytes unchecked. Run them and confirm that the class assertion of the first fails because the reader returns the bytes unchecked.
+- [x] 4.2 GREEN: read note bytes read-only from the notes root and verify the owner, the algorithm, the digest, the length and a fresh hash, as `blob-references` requires. Verify 4.1.

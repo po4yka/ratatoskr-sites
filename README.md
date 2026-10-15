@@ -51,8 +51,8 @@ The domain API has no routes yet.
 ## Project status
 
 - [x] Service skeleton: strict configuration, logging, operator plane, embedded schema, CI gate.
-- [ ] Deployment profile, database role and the read group of the note bytes (tasks 5.2 to 5.7).
-- [ ] Verified reads of note bytes (tasks 5.8 and 5.9).
+- [x] Deployment profile, database role and the read group of the note bytes (tasks 5.2 to 5.7).
+- [x] Verified reads of note bytes (tasks 5.8 and 5.9): `notes_blobs::NotesBlobReader`.
 - [ ] Selection, slugs, privacy filter and sanitised HTML (tasks 5.10 to 5.17).
 - [ ] Releases, the current-release switch and the build triggers (tasks 5.18 to 5.25).
 - [ ] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
