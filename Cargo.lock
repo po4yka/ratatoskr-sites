@@ -1447,6 +1447,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratatoskr-sites-publications"
+version = "0.1.0"
+dependencies = [
+ "ratatoskr-identifiers",
+ "ratatoskr-sites-contracts",
+ "ratatoskr-sites-publications",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "raw-cpuid"
 version = "11.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

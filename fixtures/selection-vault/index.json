@@ -1,0 +1,20 @@
+[
+  { "path": ".obsidian/app.json", "media_type": "application/json" },
+  { "path": ".obsidian/workspace-notes.md", "media_type": "text/markdown",
+    "frontmatter": { "publish": true } },
+  { "path": "blog/both.md", "media_type": "text/markdown",
+    "frontmatter": { "title": "Both sites", "publish": true } },
+  { "path": "blog/draft-cover.png", "media_type": "image/png" },
+  { "path": "blog/hello.md", "media_type": "text/markdown",
+    "frontmatter": { "title": "Hello", "publish": ["site-a"] },
+    "headings": [{ "level": 1, "heading": "Hello" }] },
+  { "path": "blog/plain.md", "media_type": "text/markdown" },
+  { "path": "blog/tagged-hidden.md", "media_type": "text/markdown",
+    "frontmatter": { "tags": ["public"], "publish": false }, "tags": ["#public"] },
+  { "path": "blog/tagged.md", "media_type": "text/markdown",
+    "frontmatter": { "tags": ["public"] }, "tags": ["#public"] },
+  { "path": "journal/today.md", "media_type": "text/markdown",
+    "frontmatter": { "publish": true } },
+  { "path": "private/launch.md", "media_type": "text/markdown",
+    "frontmatter": { "publish": true } }
+]

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/persistence",
+    "crates/publications",
     "services/sites",
 ]
 
@@ -14,7 +15,8 @@ repository   = "https://github.com/po4yka/ratatoskr-sites"
 
 [workspace.dependencies]
 # ---- in-repo ----
-ratatoskr-sites-persistence = { version = "0.1.0", path = "crates/persistence" }
+ratatoskr-sites-persistence  = { version = "0.1.0", path = "crates/persistence" }
+ratatoskr-sites-publications = { version = "0.1.0", path = "crates/publications" }
 
 # ---- fleet contracts ----
 # One revision for every `ratatoskr-*` git dependency: Cargo treats two revisions of one git
