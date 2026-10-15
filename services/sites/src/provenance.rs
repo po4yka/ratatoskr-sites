@@ -185,7 +185,7 @@ impl Provenance {
                     .filter(|((connection, id), other)| {
                         connection == connection_id
                             && selecting.contains(id)
-                            && publishes_attachment(other, &file.path)
+                            && publishes_attachment(other, file)
                     })
                     .map(|((_, id), _)| id.clone())
                     .collect();
@@ -367,10 +367,12 @@ fn matched_tags(file: &IndexedFile, included: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Whether `input` has the attachment `path` among its own files and may publish it.
-fn publishes_attachment(input: &PublicationInput<'_>, path: &str) -> bool {
-    input
-        .files
-        .iter()
-        .any(|own| own.path == path && may_publish_attachment(&input.publication, own))
+/// Whether `input` has `file`, the same path at the same revision, among its own files and may
+/// publish it.
+fn publishes_attachment(input: &PublicationInput<'_>, file: &IndexedFile) -> bool {
+    input.files.iter().any(|own| {
+        own.path == file.path
+            && own.revision == file.revision
+            && may_publish_attachment(&input.publication, own)
+    })
 }
