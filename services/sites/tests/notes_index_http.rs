@@ -21,6 +21,8 @@ type Outcome = Result<(), Failure>;
 const KNOWN: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0b01);
 const SLOW: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0b02);
 const LARGE: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0b03);
+const ROUTE_GONE: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0b04);
+const MOVED: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0b05);
 
 /// The largest answer that the index under test reads.
 const MAX_BYTES: usize = 64 * 1024;
@@ -28,6 +30,18 @@ const MAX_BYTES: usize = 64 * 1024;
 async fn files(Path(connection): Path<Uuid>) -> Response {
     if connection == SLOW {
         tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+    if connection == ROUTE_GONE {
+        // The answer of notes to a peer that is not loopback, or of an older notes without the
+        // route: an unknown route, with an empty body.
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if connection == MOVED {
+        return (
+            StatusCode::TEMPORARY_REDIRECT,
+            [(axum::http::header::LOCATION, "http://192.0.2.10/files")],
+        )
+            .into_response();
     }
     if connection == LARGE {
         return Json(json!({ "files": [], "padding": "x".repeat(MAX_BYTES * 2) })).into_response();
@@ -128,6 +142,28 @@ async fn oversized_index_is_unavailable() -> Outcome {
         index(&base).files(LARGE).await,
         Err(IndexError::Unavailable),
         "an answer over the bound is not read"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn other_not_found_is_unavailable() -> Outcome {
+    let base = stub().await?;
+    assert_eq!(
+        index(&base).files(ROUTE_GONE).await,
+        Err(IndexError::Unavailable),
+        "a 404 without the code notes.connection.not_found is not a missing connection"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn redirect_is_unavailable() -> Outcome {
+    let base = stub().await?;
+    assert_eq!(
+        index(&base).files(MOVED).await,
+        Err(IndexError::Unavailable),
+        "a redirect is not followed"
     );
     Ok(())
 }
