@@ -1931,6 +1931,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratatoskr-sites-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "ratatoskr-sites-manifest"
 version = "0.1.0"
 dependencies = [

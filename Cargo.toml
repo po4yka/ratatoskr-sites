@@ -7,6 +7,7 @@ members = [
     "crates/publications",
     "crates/release",
     "services/sites",
+    "services/sites-gateway",
 ]
 
 [workspace.package]

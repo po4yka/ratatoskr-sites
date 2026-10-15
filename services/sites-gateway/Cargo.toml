@@ -1,0 +1,27 @@
+[package]
+name        = "ratatoskr-sites-gateway"
+description = "The Ratatoskr sites gateway: serves the current deploy of each approved site on its hostname and forwards the site's own API calls to Edge."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[[bin]]
+name = "ratatoskr-sites-gateway"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace       = true
+tokio.workspace      = true
+tokio-util.workspace = true
+tracing.workspace    = true
+
+[dev-dependencies]
+serde_json.workspace = true
+sha2.workspace       = true
+tempfile.workspace   = true
+tower.workspace      = true
+
+[lints]
+workspace = true
