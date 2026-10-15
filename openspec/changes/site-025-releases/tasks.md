@@ -57,4 +57,4 @@
 ## 9. A self-closed foreign element (review follow-up of workspace task 5.21f)
 
 - [x] 9.1 RED: add `sanitise.rs::self_closed_foreign_element_is_empty`: `<svg/>` and `<math/>`, also inside an element of the same name, are empty, and the text after them stays; the content of an `svg` that is not self-closed is still removed. Confirm that the first assertion fails because the allowlist skips the rest of the page after `<svg/>`.
-- [ ] 9.2 GREEN: a browser honours the self-closing flag of `svg` and `math`, so the allowlist treats a self-closed `svg` or `math` as empty, and does not count it as a nested start inside a removed element. Verify 9.1.
+- [x] 9.2 GREEN: a browser honours the self-closing flag of `svg` and `math`, so the allowlist treats a self-closed `svg` or `math` as empty, and does not count it as a nested start inside a removed element. Verify 9.1.

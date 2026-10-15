@@ -164,6 +164,7 @@ impl State {
         if let Some((skipped, depth)) = &mut self.skipping {
             if skipped == name {
                 match tag.kind {
+                    TagKind::StartTag if is_empty_foreign(tag) => {}
                     TagKind::StartTag => *depth += 1,
                     TagKind::EndTag if *depth > 1 => *depth -= 1,
                     TagKind::EndTag => self.skipping = None,
@@ -173,8 +174,9 @@ impl State {
         }
         if REMOVED_WITH_CONTENT.contains(&name) {
             // A browser ignores the self-closing flag of these elements, so `<script/>` starts
-            // content too.
-            if tag.kind == TagKind::StartTag {
+            // content too. Only `svg` and `math` are foreign elements, where the flag holds: a
+            // self-closed one is empty.
+            if tag.kind == TagKind::StartTag && !is_empty_foreign(tag) {
                 self.skipping = Some((name.to_owned(), 1));
                 return raw_kind(name);
             }
@@ -238,6 +240,14 @@ impl State {
             self.out.push('>');
         }
     }
+}
+
+/// The foreign elements: a browser honours their self-closing flag, so `<svg/>` is empty.
+const FOREIGN: [&str; 2] = ["svg", "math"];
+
+/// Whether `tag` is a self-closed start tag of a foreign element, which has no content.
+fn is_empty_foreign(tag: &Tag) -> bool {
+    tag.self_closing && FOREIGN.contains(&&*tag.name)
 }
 
 /// The state that the tokenizer takes for the content of a removed element, as a browser does.
