@@ -1,0 +1,314 @@
+//! A real `JetStream` for the consumer tests: `SITES_TEST_NATS_URL`, default
+//! `nats://127.0.0.1:4222`.
+//!
+//! Each test provisions its own command and event streams, with subjects under a prefix of its
+//! own, and the four durables on them as Edge provisions them. So tests do not share a subject with
+//! each other or with a stream `ratatoskr_events`.
+
+use std::time::Duration;
+
+use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, pull};
+use async_nats::jetstream::{self, Context, stream};
+use ratatoskr_event_envelope::{CommandEnvelope, EnvelopeSchemaVersion, EventEnvelope};
+use ratatoskr_identifiers::{
+    CommandId, EntityRef, EventId, Extensions, OperationId, TenantRef, UserId, WireTimestamp,
+};
+use ratatoskr_sites::config::BusConfig;
+use ratatoskr_sites::consumer::{BusTarget, Durable, DurableSpec, Durables};
+use ratatoskr_sites_contracts::{ReleaseBuildRequested, SiteId};
+use uuid::Uuid;
+
+use super::Failure;
+
+/// The fixed time of every test envelope: a test never reads the wall clock.
+const OCCURRED_AT: &str = "2026-10-15T08:00:00Z";
+
+/// How long a test waits for the consumers.
+const PATIENCE: Duration = Duration::from_secs(30);
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the variable names where a test may reach JetStream; it is not part of the sites \
+              configuration"
+)]
+pub(crate) fn nats_url() -> String {
+    std::env::var("SITES_TEST_NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_owned())
+}
+
+/// The streams and durables of one test.
+pub(crate) struct TestBus {
+    pub(crate) jetstream: Context,
+    prefix: String,
+    pub(crate) durables: Durables,
+}
+
+impl TestBus {
+    pub(crate) async fn new() -> Result<Self, Failure> {
+        let jetstream = jetstream::new(async_nats::connect(nats_url()).await?);
+        let prefix = format!("t{}", Uuid::now_v7().simple());
+        for (name, class) in [("commands", "cmd"), ("events", "evt")] {
+            jetstream
+                .create_stream(stream::Config {
+                    name: format!("{prefix}_{name}"),
+                    subjects: vec![format!("{prefix}.{class}.>")],
+                    ..Default::default()
+                })
+                .await?;
+        }
+        let spec = |stream: &str, durable: &str, subject: &str, seconds: u64| DurableSpec {
+            stream: format!("{prefix}_{stream}"),
+            durable: durable.to_owned(),
+            filter: format!("{prefix}.{subject}"),
+            ack_wait: Duration::from_secs(seconds),
+        };
+        let durables = Durables {
+            release_builds: spec(
+                "commands",
+                "ratatoskr_sites_release_builds",
+                "cmd.sites.release.build_requested.v1",
+                300,
+            ),
+            note_changes: spec(
+                "events",
+                "ratatoskr_sites_note_changes",
+                "evt.notes.file.changed.v1",
+                120,
+            ),
+            vault_disconnections: spec(
+                "events",
+                "ratatoskr_sites_vault_disconnections",
+                "evt.notes.vault.disconnected.v1",
+                30,
+            ),
+            approvals: spec(
+                "events",
+                "ratatoskr_sites_approvals",
+                "evt.platform.site_approval.changed.v1",
+                30,
+            ),
+        };
+        for durable in ALL {
+            let spec = durables.spec(durable);
+            jetstream
+                .create_consumer_on_stream(
+                    pull::Config {
+                        durable_name: Some(spec.durable.clone()),
+                        filter_subject: spec.filter.clone(),
+                        ack_policy: AckPolicy::Explicit,
+                        ack_wait: spec.ack_wait,
+                        deliver_policy: DeliverPolicy::All,
+                        max_deliver: -1,
+                        ..Default::default()
+                    },
+                    spec.stream.as_str(),
+                )
+                .await?;
+        }
+        Ok(Self {
+            jetstream,
+            prefix,
+            durables,
+        })
+    }
+
+    /// The server and the identity that the service connects with.
+    pub(crate) fn target() -> BusTarget {
+        BusTarget {
+            url: nats_url(),
+            bus: BusConfig::default(),
+        }
+    }
+
+    /// Publish `body` on `subject` under the prefix of this test.
+    pub(crate) async fn publish(&self, subject: &str, body: Vec<u8>) -> Result<(), Failure> {
+        self.jetstream
+            .publish(format!("{}.{subject}", self.prefix), body.into())
+            .await?
+            .await?;
+        Ok(())
+    }
+
+    /// Wait until `durable` has delivered and acknowledged every message.
+    pub(crate) async fn settled(&self, durable: Durable) -> Result<(), Failure> {
+        let spec = self.durables.spec(durable);
+        let waited = tokio::time::timeout(PATIENCE, async {
+            loop {
+                let mut consumer: jetstream::consumer::Consumer<pull::Config> = self
+                    .jetstream
+                    .get_consumer_from_stream(&spec.durable, &spec.stream)
+                    .await?;
+                let info = consumer.info().await?;
+                if info.num_pending == 0 && info.num_ack_pending == 0 {
+                    return Ok::<(), Failure>(());
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+        waited.map_err(|_| format!("{} did not settle", spec.durable))?
+    }
+
+    pub(crate) async fn cleanup(self) -> Result<(), Failure> {
+        for name in ["commands", "events"] {
+            self.jetstream
+                .delete_stream(format!("{}_{name}", self.prefix))
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+/// The four durables.
+const ALL: [Durable; 4] = [
+    Durable::ReleaseBuilds,
+    Durable::NoteChanges,
+    Durable::VaultDisconnections,
+    Durable::Approvals,
+];
+
+/// An event envelope of `producer` with `payload`, owned by `owner`, at the fixed test time.
+pub(crate) fn event<P: ratatoskr_event_envelope::EventPayload + serde::Serialize>(
+    producer: &str,
+    owner: Uuid,
+    payload: &P,
+) -> Result<Vec<u8>, Failure> {
+    let event_id = Uuid::now_v7();
+    let mut envelope = EventEnvelope {
+        event_id: EventId(event_id),
+        event_type: P::event_type(),
+        occurred_at: WireTimestamp::parse(OCCURRED_AT)?,
+        producer: ratatoskr_event_envelope::ProducerName::parse(producer)?,
+        aggregate_id: EntityRef::parse(&format!("event:{event_id}"))?,
+        correlation_id: EntityRef::parse(&format!("event:{event_id}"))?,
+        causation_id: None,
+        tenant_id: Some(TenantRef::of_user(UserId(owner))),
+        schema_version: EnvelopeSchemaVersion::CURRENT,
+        payload: serde_json::Map::new(),
+        extensions: Extensions::new(),
+    };
+    envelope.set_payload(payload)?;
+    Ok(serde_json::to_vec(&envelope)?)
+}
+
+/// The build command of Edge for `site` and the operation `operation_id`, owned by `owner`.
+pub(crate) fn build_command(
+    site: &str,
+    owner: Uuid,
+    operation_id: Uuid,
+) -> Result<Vec<u8>, Failure> {
+    let command_id = Uuid::now_v7();
+    let mut envelope = CommandEnvelope {
+        command_id: CommandId(command_id),
+        command_type: ratatoskr_event_envelope::CommandType::parse(
+            <ReleaseBuildRequested as ratatoskr_event_envelope::CommandPayload>::COMMAND_TYPE,
+        )?,
+        issued_at: WireTimestamp::parse(OCCURRED_AT)?,
+        producer: ratatoskr_event_envelope::ProducerName::parse("ratatoskr-edge")?,
+        aggregate_id: EntityRef::parse(&format!("command:{command_id}"))?,
+        correlation_id: EntityRef::parse(&format!("operation:{operation_id}"))?,
+        causation_id: None,
+        tenant_id: Some(TenantRef::of_user(UserId(owner))),
+        schema_version: EnvelopeSchemaVersion::CURRENT,
+        payload: serde_json::Map::new(),
+        extensions: Extensions::new(),
+    };
+    envelope.set_payload(&ReleaseBuildRequested {
+        operation_id: OperationId(operation_id),
+        site_id: SiteId::parse(site)?,
+    })?;
+    Ok(serde_json::to_vec(&envelope)?)
+}
+
+/// The builds of a running service: it counts each build when it starts, and a build waits for a
+/// permit of `gate` before it runs.
+#[derive(Debug, Clone)]
+pub(crate) struct Counted {
+    inner: std::sync::Arc<ratatoskr_sites::release_build::ReleaseBuilder<super::StubIndex>>,
+    builds: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    gate: std::sync::Arc<tokio::sync::Semaphore>,
+}
+
+impl ratatoskr_sites::worker::SiteBuilds for Counted {
+    async fn build(
+        &self,
+        job: &ratatoskr_sites::release_build::BuildJob,
+    ) -> Result<
+        ratatoskr_sites::release_build::BuildOutcome,
+        ratatoskr_sites::release_build::BuildFailure,
+    > {
+        self.builds
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(permit) = self.gate.acquire().await {
+            permit.forget();
+        }
+        self.inner.build_job(job).await
+    }
+}
+
+/// The consumers and the build worker of a service under test.
+pub(crate) struct Running {
+    stop: tokio_util::sync::CancellationToken,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+    builds: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    gate: std::sync::Arc<tokio::sync::Semaphore>,
+}
+
+impl Running {
+    /// How many builds started.
+    pub(crate) fn builds(&self) -> usize {
+        self.builds.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Let `count` more builds run.
+    pub(crate) fn open(&self, count: usize) {
+        self.gate.add_permits(count);
+    }
+
+    /// Wait until `count` builds started.
+    pub(crate) async fn started(&self, count: usize) -> Result<(), Failure> {
+        tokio::time::timeout(PATIENCE, async {
+            while self.builds() < count {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .map_err(|_| format!("{count} builds did not start; {} did", self.builds()).into())
+    }
+
+    pub(crate) async fn stop(self) {
+        self.stop.cancel();
+        for task in self.tasks {
+            let _ = task.await;
+        }
+    }
+}
+
+impl super::Fixture {
+    /// Start the consumers of every durable of `bus` and the build worker. `permits` builds may
+    /// run before the test opens the gate further.
+    pub(crate) fn start(&self, bus: &TestBus, permits: usize) -> Running {
+        let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(permits));
+        let counted = Counted {
+            inner: std::sync::Arc::new(self.builder()),
+            builds: std::sync::Arc::clone(&builds),
+            gate: std::sync::Arc::clone(&gate),
+        };
+        let stop = tokio_util::sync::CancellationToken::new();
+        let tasks = ratatoskr_sites::triggers::start(
+            &self.database.database,
+            self.index.clone(),
+            counted,
+            &TestBus::target(),
+            &bus.durables,
+            &ALL,
+            &stop,
+        );
+        Running {
+            stop,
+            tasks,
+            builds,
+            gate,
+        }
+    }
+}

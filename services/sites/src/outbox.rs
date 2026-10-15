@@ -39,6 +39,30 @@ const LONGEST_BACKOFF: Duration = Duration::from_secs(30);
 #[error("the outbox relay failed: {0}")]
 pub struct RelayError(String);
 
+/// A connection to the server `url` with the identity of `bus`: its nkey seed, read again on each
+/// connect, and the inbox prefix of [`BusConfig::inbox_prefix`].
+///
+/// # Errors
+///
+/// [`RelayError`] when the seed cannot be read or the server cannot be reached.
+pub(crate) async fn connect(url: &str, bus: &BusConfig) -> Result<async_nats::Client, RelayError> {
+    let options = match &bus.nkey_seed_path {
+        Some(path) => {
+            let seed = tokio::fs::read_to_string(path)
+                .await
+                .map_err(|error| RelayError(format!("the nkey seed cannot be read: {error}")))?;
+            async_nats::ConnectOptions::with_nkey(seed.trim().to_owned())
+        }
+        None => async_nats::ConnectOptions::new(),
+    };
+    options
+        .custom_inbox_prefix(INBOX_PREFIX)
+        .connection_timeout(CONNECT_TIMEOUT)
+        .connect(url)
+        .await
+        .map_err(|error| RelayError(error.to_string()))
+}
+
 /// Publishes the rows of the outbox in order and marks each one published after its `PubAck`.
 /// Clones share one connection.
 #[derive(Debug, Clone)]
@@ -125,21 +149,7 @@ impl OutboxRelay {
     }
 
     async fn connect(&self) -> Result<jetstream::Context, RelayError> {
-        let options = match &self.bus.nkey_seed_path {
-            Some(path) => {
-                let seed = tokio::fs::read_to_string(path).await.map_err(|error| {
-                    RelayError(format!("the nkey seed cannot be read: {error}"))
-                })?;
-                async_nats::ConnectOptions::with_nkey(seed.trim().to_owned())
-            }
-            None => async_nats::ConnectOptions::new(),
-        };
-        let client = options
-            .custom_inbox_prefix(INBOX_PREFIX)
-            .connection_timeout(CONNECT_TIMEOUT)
-            .connect(self.url.as_str())
-            .await
-            .map_err(|error| RelayError(error.to_string()))?;
+        let client = connect(&self.url, &self.bus).await?;
         Ok(jetstream::ContextBuilder::new()
             .timeout(PUBLISH_TIMEOUT)
             .build(client))

@@ -29,6 +29,9 @@ ratatoskr-sites-release      = { version = "0.1.0", path = "crates/release" }
 # messages.
 ratatoskr-identifiers     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
 ratatoskr-sites-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
+# The two notes events that the sites service consumes: `notes.file.changed.v1` and
+# `notes.vault.disconnected.v1` (workspace spec site-publications).
+ratatoskr-notes-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
 # The envelope of the outbox rows, and the operation report `platform.operation.reported.v1` of a
 # build (workspace spec site-publications, "A build is one operation of the sites lane").
 ratatoskr-event-envelope      = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "2c726027da79e0e899ad482afead0a2000b03e61" }
@@ -80,6 +83,8 @@ sha2 = { version = "0.10", default-features = false, features = ["std"] }
 async-nats = "0.50.0"
 # The stop of the relay when the process stops.
 tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
+# The message stream of a pull consumer. The version of ratatoskr-notes.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 # ---- configuration ----
 figment = { version = "0.10", features = ["env"] }

@@ -4,6 +4,8 @@
 
 #![allow(dead_code, reason = "each test file uses a part of the fixture")]
 
+pub(crate) mod bus;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -33,6 +35,11 @@ pub(crate) struct StubIndex {
 }
 
 impl StubIndex {
+    /// The connection of the stub.
+    pub(crate) const fn connection(&self) -> Uuid {
+        self.connection
+    }
+
     /// The files of the stub as they are now.
     pub(crate) fn files_now(&self) -> Result<Vec<IndexedFile>, Failure> {
         Ok(self

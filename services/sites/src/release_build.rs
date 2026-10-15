@@ -34,6 +34,27 @@ pub struct BuildRequest {
     pub operation_id: Option<Uuid>,
 }
 
+/// One build of a site, for every request that the build worker took together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildJob {
+    /// The site to build.
+    pub site_id: String,
+    /// The Platform operations of the build commands among the requests; each gets the outcome.
+    pub operation_ids: Vec<Uuid>,
+    /// `true` when a build command is among the requests, `false` when only file changes are.
+    pub explicit: bool,
+}
+
+impl From<&BuildRequest> for BuildJob {
+    fn from(request: &BuildRequest) -> Self {
+        Self {
+            site_id: request.site_id.clone(),
+            operation_ids: request.operation_id.into_iter().collect(),
+            explicit: true,
+        }
+    }
+}
+
 /// What a build made.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildOutcome {
@@ -143,20 +164,29 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
     ///
     /// [`BuildFailure`] when the build makes no release.
     pub async fn build(&self, request: &BuildRequest) -> Result<BuildOutcome, BuildFailure> {
+        self.build_job(&BuildJob::from(request)).await
+    }
+
+    /// Build the release of `job.site_id`, and report the outcome to each operation of the job.
+    ///
+    /// # Errors
+    ///
+    /// [`BuildFailure`] when the build makes no release.
+    pub async fn build_job(&self, job: &BuildJob) -> Result<BuildOutcome, BuildFailure> {
         let owner: Option<Uuid> =
             sqlx::query_scalar("select owner_id from sites.sites where site_id = $1")
-                .bind(&request.site_id)
+                .bind(&job.site_id)
                 .fetch_optional(self.database.pool())
                 .await
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
-        let outcome = self.build_site(&request.site_id, owner).await;
-        if let Some(operation_id) = request.operation_id
-            && let Err(error) = self.report(owner, operation_id, &outcome).await
-        {
-            // The outcome of the build stays the answer; Platform's stale-operation reaper ends an
-            // operation whose report is lost.
-            tracing::error!(%error, %operation_id, "the report of a build could not be written");
+        let outcome = self.build_site(&job.site_id, owner).await;
+        for &operation_id in &job.operation_ids {
+            if let Err(error) = report(&self.database, owner, operation_id, &outcome).await {
+                // The outcome of the build stays the answer; Platform's stale-operation reaper
+                // ends an operation whose report is lost.
+                tracing::error!(%error, %operation_id, "the report of a build could not be written");
+            }
         }
         outcome
     }
@@ -365,52 +395,52 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .map_err(BuildFailure::Database)?;
         transaction.commit().await.map_err(BuildFailure::Database)
     }
+}
 
-    /// Write the report of the operation to the outbox. A report that cannot be built is logged:
-    /// Platform's stale-operation reaper ends an operation whose report is lost.
-    async fn report(
-        &self,
-        owner: Uuid,
-        operation_id: Uuid,
-        outcome: &Result<BuildOutcome, BuildFailure>,
-    ) -> Result<(), BuildFailure> {
-        let event_id = Uuid::now_v7();
-        let (class, message) = match outcome {
-            Ok(_) => (String::new(), String::new()),
-            Err(failure) => (failure.class(), safe_message(&failure.message())),
-        };
-        let report = match outcome {
-            Ok(outcome) => BuildReport::Succeeded {
-                release_id: &outcome.release_id,
-            },
-            Err(failure) => BuildReport::Failed {
-                class: &class,
-                message: &message,
-                retryable: failure.retryable(),
-            },
-        };
-        let envelope = events::build_reported(event_id, owner, operation_id, report)
-            .map_err(|error| error.to_string())
-            .and_then(|envelope| serde_json::to_value(envelope).map_err(|error| error.to_string()));
-        let envelope = match envelope {
-            Ok(envelope) => envelope,
-            Err(error) => {
-                tracing::error!(%error, %operation_id, "a build report could not be built");
-                return Ok(());
-            }
-        };
-        sqlx::query(
-            "insert into sites.outbox (event_id, subject, payload, created_at) \
-             values ($1, $2, $3, now())",
-        )
-        .bind(event_id)
-        .bind(events::OPERATION_REPORTED)
-        .bind(envelope)
-        .execute(self.database.pool())
-        .await
-        .map_err(BuildFailure::Database)?;
-        Ok(())
-    }
+/// Write the report of the operation to the outbox. A report that cannot be built is logged:
+/// Platform's stale-operation reaper ends an operation whose report is lost.
+pub(crate) async fn report(
+    database: &Database,
+    owner: Uuid,
+    operation_id: Uuid,
+    outcome: &Result<BuildOutcome, BuildFailure>,
+) -> Result<(), BuildFailure> {
+    let event_id = Uuid::now_v7();
+    let (class, message) = match outcome {
+        Ok(_) => (String::new(), String::new()),
+        Err(failure) => (failure.class(), safe_message(&failure.message())),
+    };
+    let report = match outcome {
+        Ok(outcome) => BuildReport::Succeeded {
+            release_id: &outcome.release_id,
+        },
+        Err(failure) => BuildReport::Failed {
+            class: &class,
+            message: &message,
+            retryable: failure.retryable(),
+        },
+    };
+    let envelope = events::build_reported(event_id, owner, operation_id, report)
+        .map_err(|error| error.to_string())
+        .and_then(|envelope| serde_json::to_value(envelope).map_err(|error| error.to_string()));
+    let envelope = match envelope {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            tracing::error!(%error, %operation_id, "a build report could not be built");
+            return Ok(());
+        }
+    };
+    sqlx::query(
+        "insert into sites.outbox (event_id, subject, payload, created_at) \
+         values ($1, $2, $3, now())",
+    )
+    .bind(event_id)
+    .bind(events::OPERATION_REPORTED)
+    .bind(envelope)
+    .execute(database.pool())
+    .await
+    .map_err(BuildFailure::Database)?;
+    Ok(())
 }
 
 /// The longest message of an operation report, in UTF-8 bytes (`SafeMessage`).

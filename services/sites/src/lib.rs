@@ -13,6 +13,7 @@
 
 pub mod admin;
 pub mod config;
+pub mod consumer;
 pub mod events;
 pub mod notes_blobs;
 pub mod notes_index;
@@ -20,6 +21,8 @@ pub mod outbox;
 pub mod release_build;
 pub mod release_read;
 pub mod sites_blobs;
+pub mod triggers;
+pub mod worker;
 
 use std::process::ExitCode;
 use std::sync::Arc;
