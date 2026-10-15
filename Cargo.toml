@@ -51,6 +51,9 @@ serde      = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror  = "2.0"
 
+# ---- dev only ----
+tempfile = "3"
+
 [workspace.lints.rust]
 unsafe_code                   = "forbid"
 missing_docs                  = "deny"

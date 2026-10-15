@@ -13,6 +13,7 @@
 
 pub mod admin;
 pub mod config;
+pub mod notes_blobs;
 
 use std::process::ExitCode;
 use std::sync::Arc;
