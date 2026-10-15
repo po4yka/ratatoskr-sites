@@ -6,6 +6,7 @@
 
 mod fault;
 mod manage;
+mod publications;
 
 use std::sync::Arc;
 
@@ -68,6 +69,13 @@ pub fn router(state: Arc<ApiState>) -> Router {
             get(manage::get_manifest).put(manage::put_manifest),
         )
         .route("/v1/sites/{site}/releases", get(manage::list_releases))
+        .route("/v1/sites/{site}/publications", get(publications::list))
+        .route(
+            "/v1/sites/{site}/publications/{publication}",
+            get(publications::read)
+                .put(publications::write)
+                .delete(publications::remove),
+        )
         .route(
             "/internal/sites/{site}/manifest",
             get(manage::internal_manifest),

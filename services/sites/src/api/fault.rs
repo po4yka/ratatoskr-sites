@@ -13,8 +13,12 @@ pub(crate) enum Fault {
     Unauthenticated,
     /// The internal route was called by a peer that is not on a loopback address.
     Forbidden,
+    /// A parameter or a body is not valid.
+    Invalid,
     /// The site does not exist, or does not serve what the request asks for.
     SiteNotFound,
+    /// The publication does not exist.
+    PublicationNotFound,
     /// No route has this path.
     RouteNotFound,
     /// The route has no handler for this method.
@@ -38,6 +42,18 @@ impl Fault {
                 StatusCode::FORBIDDEN,
                 "sites.request.forbidden",
                 "This route answers the host only.",
+                false,
+            ),
+            Self::Invalid => (
+                StatusCode::BAD_REQUEST,
+                "sites.request.invalid",
+                "The request is invalid.",
+                false,
+            ),
+            Self::PublicationNotFound => (
+                StatusCode::NOT_FOUND,
+                "sites.publication_not_found",
+                "The publication does not exist.",
                 false,
             ),
             Self::SiteNotFound => (
