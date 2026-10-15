@@ -247,6 +247,7 @@ impl ratatoskr_sites::worker::SiteBuilds for Counted {
 
 /// The consumers and the build worker of a service under test.
 pub(crate) struct Running {
+    pub(crate) shared: ratatoskr_sites::triggers::Shared,
     stop: tokio_util::sync::CancellationToken,
     tasks: Vec<tokio::task::JoinHandle<()>>,
     builds: std::sync::Arc<std::sync::atomic::AtomicUsize>,
@@ -286,7 +287,11 @@ impl Running {
 impl super::Fixture {
     /// Start the consumers of every durable of `bus` and the build worker. `permits` builds may
     /// run before the test opens the gate further.
-    pub(crate) fn start(&self, bus: &TestBus, permits: usize) -> Running {
+    pub(crate) async fn start(&self, bus: &TestBus, permits: usize) -> Result<Running, Failure> {
+        let shared = ratatoskr_sites::triggers::Shared {
+            database: self.database.database.clone(),
+            servable: ratatoskr_sites::servable::Servable::load(&self.database.database).await?,
+        };
         let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(permits));
         let counted = Counted {
@@ -296,20 +301,23 @@ impl super::Fixture {
         };
         let stop = tokio_util::sync::CancellationToken::new();
         let tasks = ratatoskr_sites::triggers::start(
-            &self.database.database,
+            &shared,
             self.index.clone(),
             counted,
-            &TestBus::target(),
-            &bus.durables,
-            &ALL,
+            &ratatoskr_sites::triggers::Consumers {
+                target: &TestBus::target(),
+                specs: &bus.durables,
+                durables: &ALL,
+            },
             &stop,
         );
-        Running {
+        Ok(Running {
+            shared,
             stop,
             tasks,
             builds,
             gate,
-        }
+        })
     }
 }
 
@@ -355,4 +363,94 @@ pub(crate) async fn report_of(
             .and_then(serde_json::Value::as_str)
             == Some(operation_id.to_string().as_str())
     }))
+}
+
+/// Publish a build command of Edge for the operation `operation_id`, and wait for its report.
+pub(crate) async fn requested_build(
+    fixture: &super::Fixture,
+    bus: &TestBus,
+    operation_id: Uuid,
+) -> Result<serde_json::Value, Failure> {
+    bus.publish(
+        "cmd.sites.release.build_requested.v1",
+        build_command(super::SITE, fixture.owner, operation_id)?,
+    )
+    .await?;
+    let report = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(report) = report_of(fixture, operation_id).await? {
+                return Ok::<_, Failure>(report);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .map_err(|_| "the build reported nothing")??;
+    Ok(report)
+}
+
+/// A manifest of the fixture site `site-r`.
+#[derive(Debug, Clone)]
+pub(crate) struct TestManifest {
+    pub(crate) hostname: String,
+    pub(crate) publications: Vec<String>,
+    pub(crate) capabilities: Vec<String>,
+}
+
+impl TestManifest {
+    /// A manifest with `hostname`, `publications` and `capabilities`.
+    pub(crate) fn of(hostname: &str, publications: &[&str], capabilities: &[&str]) -> Self {
+        Self {
+            hostname: hostname.to_owned(),
+            publications: publications.iter().map(|&item| item.to_owned()).collect(),
+            capabilities: capabilities.iter().map(|&item| item.to_owned()).collect(),
+        }
+    }
+
+    /// The TOML bytes of `ratatoskr-site.toml`.
+    pub(crate) fn bytes(&self) -> Vec<u8> {
+        let list = |items: &[String]| {
+            items
+                .iter()
+                .map(|item| format!("\"{item}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "site_id = \"{}\"\nhostname = \"{}\"\npublications = [{}]\ncapabilities = [{}]\n",
+            super::SITE,
+            self.hostname,
+            list(&self.publications),
+            list(&self.capabilities)
+        )
+        .into_bytes()
+    }
+
+    /// The digest that an approval names.
+    pub(crate) fn digest(&self) -> String {
+        ratatoskr_sites_manifest::digest(&self.bytes())
+    }
+}
+
+/// Publish an approval change of Platform for `manifest` and wait until the service consumed it.
+pub(crate) async fn approve(
+    bus: &TestBus,
+    fixture: &super::Fixture,
+    manifest: &TestManifest,
+    approved: bool,
+) -> Result<(), Failure> {
+    let capabilities: Vec<&str> = manifest.capabilities.iter().map(String::as_str).collect();
+    bus.publish(
+        "evt.platform.site_approval.changed.v1",
+        approval(
+            super::SITE,
+            &manifest.digest(),
+            &capabilities,
+            &manifest.hostname,
+            approved,
+            fixture.owner,
+        )?,
+    )
+    .await?;
+    bus.settled(Durable::Approvals).await
 }

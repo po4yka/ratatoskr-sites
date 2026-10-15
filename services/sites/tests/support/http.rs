@@ -7,7 +7,9 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use ratatoskr_sites::api::{ApiState, router};
+use ratatoskr_sites::servable::Servable;
 use ratatoskr_sites::sites_blobs::SitesBlobs;
+use ratatoskr_sites::triggers::Shared;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
@@ -91,11 +93,16 @@ impl Fixture {
     /// The domain router over the database and the sites blob root of the fixture, with the state
     /// read now.
     pub(crate) async fn api(&self) -> Result<Router, Failure> {
-        let state = ApiState::load(
-            self.database.database.clone(),
-            SitesBlobs::new(self.sites_root.path()),
-        )
-        .await?;
+        let shared = Shared {
+            database: self.database.database.clone(),
+            servable: Servable::load(&self.database.database).await?,
+        };
+        self.api_of(&shared).await
+    }
+
+    /// The domain router over `shared`, the state of a running service.
+    pub(crate) async fn api_of(&self, shared: &Shared) -> Result<Router, Failure> {
+        let state = ApiState::load(shared, SitesBlobs::new(self.sites_root.path())).await?;
         Ok(router(state))
     }
 }
@@ -129,4 +136,22 @@ pub(crate) async fn assert_same_as_unknown(
         assert_eq!(answer.body, reference.body, "{path}: the body");
     }
     Ok(())
+}
+
+/// Submit `manifest` for the fixture site as the owner `user`.
+pub(crate) async fn submit(
+    router: &Router,
+    user: Uuid,
+    manifest: &super::bus::TestManifest,
+) -> Result<Answer, Failure> {
+    call(
+        router,
+        owner(
+            Method::PUT,
+            &format!("/v1/sites/{}/manifest", super::SITE),
+            user,
+            manifest.bytes(),
+        )?,
+    )
+    .await
 }

@@ -12,6 +12,7 @@ name = "ratatoskr-sites"
 path = "src/main.rs"
 
 [dependencies]
+ratatoskr-sites-manifest.workspace    = true
 ratatoskr-sites-persistence.workspace = true
 ratatoskr-identifiers.workspace       = true
 ratatoskr-event-envelope.workspace    = true

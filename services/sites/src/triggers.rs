@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::consumer::{self, BusTarget, Disposition, Durable, Durables, Inbound};
 use crate::notes_index::NotesIndex;
 use crate::release_build::{BuildFailure, report};
+use crate::servable::Servable;
 use crate::worker::{BuildQueue, SiteBuilds, build_queue};
 
 /// Why a message could not be applied. It is delivered again.
@@ -31,20 +32,44 @@ enum ApplyError {
     Report(#[from] BuildFailure),
 }
 
+/// What the consumers, the build worker and the routes share.
+#[derive(Debug, Clone)]
+pub struct Shared {
+    /// The database.
+    pub database: Database,
+    /// The servable sites.
+    pub servable: Arc<Servable>,
+}
+
+/// The durables to consume and where.
+#[derive(Debug, Clone, Copy)]
+pub struct Consumers<'a> {
+    /// The server and the identity.
+    pub target: &'a BusTarget,
+    /// The specs of the four durables.
+    pub specs: &'a Durables,
+    /// The durables to consume.
+    pub durables: &'a [Durable],
+}
+
 /// Start the consumers of `durables` and the build worker, until `stop`. The worker builds with
 /// `builds`, and the handler reads the notes index from `index`.
 pub fn start<I: NotesIndex + 'static, B: SiteBuilds>(
-    database: &Database,
+    shared: &Shared,
     index: I,
     builds: B,
-    target: &BusTarget,
-    specs: &Durables,
-    durables: &[Durable],
+    consumers: &Consumers<'_>,
     stop: &CancellationToken,
 ) -> Vec<JoinHandle<()>> {
-    let (queue, worker) = build_queue(database.clone(), builds);
-    let triggers = Arc::new(Triggers::new(database.clone(), index, queue));
-    let mut tasks = consumer::spawn(target, specs, durables, &triggers, stop);
+    let (queue, worker) = build_queue(shared.clone(), builds);
+    let triggers = Arc::new(Triggers::new(shared.clone(), index, queue));
+    let mut tasks = consumer::spawn(
+        consumers.target,
+        consumers.specs,
+        consumers.durables,
+        &triggers,
+        stop,
+    );
     tasks.push(tokio::spawn(worker.run(stop.clone())));
     tasks
 }
@@ -53,6 +78,7 @@ pub fn start<I: NotesIndex + 'static, B: SiteBuilds>(
 #[derive(Debug)]
 pub struct Triggers<I> {
     database: Database,
+    servable: Arc<Servable>,
     index: I,
     queue: BuildQueue,
 }
@@ -60,9 +86,10 @@ pub struct Triggers<I> {
 impl<I: NotesIndex + 'static> Triggers<I> {
     /// A handler that reads the notes index from `index` and wakes the worker of `queue`.
     #[must_use]
-    pub const fn new(database: Database, index: I, queue: BuildQueue) -> Self {
+    pub fn new(shared: Shared, index: I, queue: BuildQueue) -> Self {
         Self {
-            database,
+            database: shared.database,
+            servable: shared.servable,
             index,
             queue,
         }

@@ -46,7 +46,7 @@ async fn command(
 async fn suspended_publication_does_not_build() -> Outcome {
     let fixture = Fixture::new().await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, usize::MAX >> 4);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
     let first = command(&fixture, &bus, Uuid::now_v7()).await?;
     assert_eq!(first.get("status"), Some(&serde_json::json!("succeeded")));
     let (before, _) = current_release(&fixture.database.database, SITE)
@@ -84,7 +84,7 @@ async fn suspended_publication_does_not_build() -> Outcome {
 async fn withdrawn_site_is_indistinguishable_from_unknown() -> Outcome {
     let fixture = Fixture::new().await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, usize::MAX >> 4);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
     command(&fixture, &bus, Uuid::now_v7()).await?;
 
     let digest = "a".repeat(64);

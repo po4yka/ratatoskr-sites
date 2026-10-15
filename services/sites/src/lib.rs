@@ -21,6 +21,7 @@ pub mod notes_index;
 pub mod outbox;
 pub mod release_build;
 pub mod release_read;
+pub mod servable;
 pub mod sites_blobs;
 pub mod triggers;
 pub mod worker;
@@ -37,12 +38,16 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::admin::{RuntimeState, admin_router};
+use crate::api::ApiState;
 use crate::config::{LogFormat, SitesConfig, TelemetryConfig};
 use crate::consumer::{BusTarget, Durable, Durables};
 use crate::notes_blobs::NotesBlobReader;
 use crate::notes_index::UnavailableIndex;
 use crate::outbox::OutboxRelay;
 use crate::release_build::ReleaseBuilder;
+use crate::servable::Servable;
+use crate::sites_blobs::SitesBlobs;
+use crate::triggers::{Consumers, Shared};
 
 /// The whole process lifecycle.
 ///
@@ -135,6 +140,15 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
         .await
         .map_err(|error| format!("the sites schema could not be applied: {error}"))?;
 
+    let shared = Shared {
+        database: database.clone(),
+        servable: Servable::load(&database)
+            .await
+            .map_err(|error| format!("the servable sites could not be read: {error}"))?,
+    };
+    let api_state = ApiState::load(&shared, SitesBlobs::new(&config.blobs.root))
+        .await
+        .map_err(|error| format!("the domain state could not be read: {error}"))?;
     let runtime = Arc::new(RuntimeState::new(database.clone()));
     let admin = bind(config.admin.bind, "operator").await?;
     let api = bind(config.api.listen_address, "domain").await?;
@@ -145,7 +159,7 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
         admin_router(Arc::clone(&runtime), metrics),
         stop_receiver.clone(),
     );
-    let api_task = spawn_server(api, Router::new(), stop_receiver);
+    let api_task = spawn_server(api, api::router(api_state), stop_receiver);
 
     // The relay publishes what the outbox holds, also the events of an earlier process. The
     // consumers of the durables and the build worker run only with a bus too.
@@ -154,7 +168,7 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     if let Some(url) = &config.bus.url {
         let relay = OutboxRelay::new(database.clone(), url.clone(), config.bus.clone());
         bus_tasks.push(tokio::spawn(relay.run(bus_stop.clone())));
-        bus_tasks.extend(start_pipeline(config, &database, url, &bus_stop));
+        bus_tasks.extend(start_pipeline(config, &shared, url, &bus_stop));
     } else {
         tracing::info!(
             "RATATOSKR__BUS__URL is not set; the outbox is not relayed and no durable is read"
@@ -198,12 +212,12 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
 /// index is [`UnavailableIndex`] until the notes internal index route exists.
 fn start_pipeline(
     config: &SitesConfig,
-    database: &Database,
+    shared: &Shared,
     url: &str,
     stop: &tokio_util::sync::CancellationToken,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let builder = ReleaseBuilder::new(
-        database.clone(),
+        shared.database.clone(),
         UnavailableIndex,
         NotesBlobReader::new(&config.blobs.notes_root),
         config.blobs.root.clone(),
@@ -213,16 +227,18 @@ fn start_pipeline(
         bus: config.bus.clone(),
     };
     triggers::start(
-        database,
+        shared,
         UnavailableIndex,
         builder,
-        &target,
-        &Durables::production(),
-        &[
-            Durable::ReleaseBuilds,
-            Durable::NoteChanges,
-            Durable::VaultDisconnections,
-        ],
+        &Consumers {
+            target: &target,
+            specs: &Durables::production(),
+            durables: &[
+                Durable::ReleaseBuilds,
+                Durable::NoteChanges,
+                Durable::VaultDisconnections,
+            ],
+        },
         stop,
     )
 }
@@ -239,11 +255,14 @@ fn spawn_server(
     mut stop: tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let served = axum::serve(listener, router)
-            .with_graceful_shutdown(async move {
-                let _ = stop.wait_for(|stopping| *stopping).await;
-            })
-            .await;
+        let served = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = stop.wait_for(|stopping| *stopping).await;
+        })
+        .await;
         if let Err(error) = served {
             tracing::error!(%error, "a listener stopped with an error");
         }

@@ -6,7 +6,9 @@ use std::sync::Arc;
 use axum::Router;
 use ratatoskr_sites_persistence::Database;
 
+use crate::servable::Servable;
 use crate::sites_blobs::SitesBlobs;
+use crate::triggers::Shared;
 
 /// What the domain handlers share.
 #[derive(Debug)]
@@ -17,6 +19,7 @@ use crate::sites_blobs::SitesBlobs;
 pub struct ApiState {
     database: Database,
     blobs: SitesBlobs,
+    servable: Arc<Servable>,
 }
 
 impl ApiState {
@@ -29,8 +32,18 @@ impl ApiState {
         clippy::unused_async,
         reason = "SITE-025 task 5.27 reads the servable sites here"
     )]
-    pub async fn load(database: Database, blobs: SitesBlobs) -> Result<Arc<Self>, sqlx::Error> {
-        Ok(Arc::new(Self { database, blobs }))
+    pub async fn load(shared: &Shared, blobs: SitesBlobs) -> Result<Arc<Self>, sqlx::Error> {
+        Ok(Arc::new(Self {
+            database: shared.database.clone(),
+            blobs,
+            servable: Arc::clone(&shared.servable),
+        }))
+    }
+
+    /// The servable sites.
+    #[must_use]
+    pub fn servable(&self) -> &Servable {
+        &self.servable
     }
 }
 

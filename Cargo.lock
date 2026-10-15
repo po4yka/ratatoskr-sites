@@ -1852,6 +1852,7 @@ dependencies = [
  "ratatoskr-notes-contracts",
  "ratatoskr-operation-contracts",
  "ratatoskr-sites-contracts",
+ "ratatoskr-sites-manifest",
  "ratatoskr-sites-persistence",
  "ratatoskr-sites-publications",
  "ratatoskr-sites-release",
@@ -1882,6 +1883,15 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "ratatoskr-sites-manifest"
+version = "0.1.0"
+dependencies = [
+ "ratatoskr-sites-contracts",
+ "sha2 0.10.9",
  "thiserror",
 ]
 

@@ -84,7 +84,7 @@ async fn changes(fixture: &Fixture, bus: &TestBus, paths: &[&str]) -> Outcome {
 async fn unrelated_change_starts_no_build() -> Outcome {
     let fixture = Fixture::new().await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, usize::MAX >> 4);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
     command(&fixture, &bus).await?;
     assert_eq!(running.builds(), 1, "the command builds the first release");
 
@@ -107,7 +107,7 @@ async fn unrelated_change_starts_no_build() -> Outcome {
 async fn changes_during_a_build_coalesce_into_one() -> Outcome {
     let fixture = Fixture::new().await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, 1);
+    let running = fixture.start(&bus, 1).await?;
     command(&fixture, &bus).await?;
     assert_eq!(running.builds(), 1, "the command builds the first release");
 
@@ -135,7 +135,7 @@ async fn manual_publication_ignores_file_changes() -> Outcome {
         .execute(fixture.database.pool())
         .await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, usize::MAX >> 4);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
     command(&fixture, &bus).await?;
     assert_eq!(running.builds(), 1, "the command builds the first release");
 
@@ -159,7 +159,7 @@ async fn manual_publication_ignores_file_changes() -> Outcome {
 async fn first_release_needs_an_explicit_request() -> Outcome {
     let fixture = Fixture::new().await?;
     let bus = TestBus::new().await?;
-    let running = fixture.start(&bus, usize::MAX >> 4);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
 
     // The automatic publication has no release, and `a.md` carries `publish: true`.
     changes(&fixture, &bus, &["a.md"]).await?;

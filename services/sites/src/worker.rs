@@ -12,8 +12,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use std::sync::Arc;
+
 use crate::notes_index::NotesIndex;
 use crate::release_build::{BuildFailure, BuildJob, BuildOutcome, ReleaseBuilder};
+use crate::servable::Servable;
+use crate::triggers::Shared;
 
 /// How many wake-ups wait for the worker at most.
 const WAKE_CAPACITY: usize = 256;
@@ -58,17 +62,19 @@ impl BuildQueue {
 #[derive(Debug)]
 pub struct BuildWorker<B> {
     database: Database,
+    servable: Arc<Servable>,
     builds: B,
     wake: mpsc::Receiver<String>,
 }
 
 /// A queue and the worker that it wakes.
-pub fn build_queue<B: SiteBuilds>(database: Database, builds: B) -> (BuildQueue, BuildWorker<B>) {
+pub fn build_queue<B: SiteBuilds>(shared: Shared, builds: B) -> (BuildQueue, BuildWorker<B>) {
     let (sender, receiver) = mpsc::channel(WAKE_CAPACITY);
     (
         BuildQueue { wake: sender },
         BuildWorker {
-            database,
+            database: shared.database,
+            servable: shared.servable,
             builds,
             wake: receiver,
         },
@@ -137,8 +143,16 @@ impl<B: SiteBuilds> BuildWorker<B> {
                     .collect(),
                 explicit: rows.iter().any(|(_, origin, _)| origin == "command"),
             };
-            if let Err(error) = self.builds.build(&job).await {
-                tracing::info!(%error, class = %error.class(), site_id, "a build made no release");
+            match self.builds.build(&job).await {
+                Ok(outcome) if outcome.new_release => {
+                    if let Err(error) = self.servable.refresh(&self.database, site_id).await {
+                        tracing::warn!(%error, site_id, "the servable sites could not be read");
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::info!(%error, class = %error.class(), site_id, "a build made no release");
+                }
             }
             let taken: Vec<Uuid> = rows.iter().map(|(request, _, _)| *request).collect();
             if let Err(error) =
