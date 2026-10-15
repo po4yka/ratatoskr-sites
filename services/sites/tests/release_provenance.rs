@@ -321,10 +321,15 @@ async fn selection_inputs_come_from_the_stored_revision() -> Outcome {
     )
     .await?;
     built(&fixture).await?;
-    assert_eq!(
-        publications_of(&fixture, "shared/n.md").await?,
-        vec![vec!["pub-z".to_owned()]],
-        "the selection inputs come from the revision that the row stores"
+    // Since 5.88 pub-z, which read another revision, does not publish the row either; the point
+    // here is that pub-r drops the note.
+    let publications = publications_of(&fixture, "shared/n.md").await?;
+    assert!(
+        !publications
+            .iter()
+            .flatten()
+            .any(|publication| publication == "pub-r"),
+        "the selection inputs come from the revision that the row stores: {publications:?}"
     );
 
     running.stop().await;

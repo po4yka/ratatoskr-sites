@@ -204,3 +204,7 @@ makes an ordinary build, because the command or the automatic mode releases new 
 - The selection inputs of a note row (`names_site`, `selection_tags`) come from the revision that
   the row stores, the one of the first selecting publication, never from the version that another
   publication read.
+- A publication joins the publications of a note row, and of its page, only when its own file is
+  the revision that the row stores. When a manual publication reads an older revision from the
+  release and an automatic one reads a newer one, only the publication whose id comes first, and
+  whose revision the page renders, publishes the note in that release.

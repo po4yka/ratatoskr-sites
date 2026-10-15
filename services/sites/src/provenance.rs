@@ -66,10 +66,6 @@ impl Provenance {
                 .iter()
                 .filter(|file| chosen.contains(&file.path))
             {
-                by_path
-                    .entry(file.path.clone())
-                    .or_default()
-                    .insert(publication_id.clone());
                 let same = |source: &Source| {
                     source.connection == *connection_id && source.file.path == file.path
                 };
@@ -86,6 +82,17 @@ impl Provenance {
                 let Some(source) = sources.iter_mut().find(|source| same(source)) else {
                     continue;
                 };
+                // A publication publishes the note only when its own file is the revision that
+                // the row stores (that of the first selecting publication, which renders the
+                // page): a manual publication that reads an older revision from the release does
+                // not publish a newer one that an automatic publication read.
+                if file.revision != source.file.revision {
+                    continue;
+                }
+                by_path
+                    .entry(file.path.clone())
+                    .or_default()
+                    .insert(publication_id.clone());
                 source.publications.insert(publication_id.clone());
                 // The selection inputs come from the revision that the row stores (that of the
                 // first selecting publication), never from the version that another publication
