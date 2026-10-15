@@ -162,13 +162,22 @@ pub(crate) struct Store {
 impl Store {
     /// A store with a retention of `retention` and `SITE` approved.
     pub(crate) async fn new(retention: usize) -> Result<Self, Failure> {
+        Self::with_limit(retention, 64 * 1024 * 1024).await
+    }
+
+    /// A store with a retention of `retention`, a bundle limit of `max_bundle_bytes`, and `SITE`
+    /// approved.
+    pub(crate) async fn with_limit(
+        retention: usize,
+        max_bundle_bytes: u64,
+    ) -> Result<Self, Failure> {
         let database = TestDatabase::create().await?;
         let root = tempfile::tempdir()?;
         let deploys = DeployStore::new(
             database.database.clone(),
             root.path().to_path_buf(),
             Limits {
-                max_bundle_bytes: 64 * 1024 * 1024,
+                max_bundle_bytes,
                 retention,
             },
         );
@@ -229,4 +238,43 @@ fn walk(base: &Path, dir: &Path, found: &mut Vec<String>) -> Result<(), Failure>
         }
     }
     Ok(())
+}
+
+/// Append `bytes` as the regular file `path` whose ustar size field says 0, with a PAX `size`
+/// record before it that gives the real length, as the review probe of M2 does.
+pub(crate) fn append_pax_sized(
+    builder: &mut tar::Builder<Vec<u8>>,
+    path: &str,
+    bytes: &[u8],
+) -> Result<(), Failure> {
+    let digits = bytes.len().to_string();
+    // A PAX record is "<length> size=<digits>\n", and its length counts its own digits.
+    let mut length = digits.len() + 7;
+    length += length.to_string().len();
+    let record = format!("{length} size={digits}\n");
+    let mut extension = tar::Header::new_ustar();
+    extension.set_path("PaxHeader")?;
+    extension.set_entry_type(tar::EntryType::XHeader);
+    extension.set_size(u64::try_from(record.len())?);
+    extension.set_mode(0o644);
+    extension.set_cksum();
+    let mut file = tar::Header::new_ustar();
+    file.set_path(path)?;
+    file.set_entry_type(tar::EntryType::Regular);
+    file.set_size(0);
+    file.set_mode(0o644);
+    file.set_cksum();
+    let out = builder.get_mut();
+    out.extend_from_slice(extension.as_bytes());
+    out.extend_from_slice(&padded(record.as_bytes()));
+    out.extend_from_slice(file.as_bytes());
+    out.extend_from_slice(&padded(bytes));
+    Ok(())
+}
+
+/// `bytes` padded with zeros to a whole number of 512-byte blocks.
+fn padded(bytes: &[u8]) -> Vec<u8> {
+    let mut block = bytes.to_vec();
+    block.resize(bytes.len().div_ceil(512) * 512, 0);
+    block
 }

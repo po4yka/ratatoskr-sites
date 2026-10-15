@@ -2,7 +2,7 @@
 
 mod support;
 
-use support::{Bundle, Failure, SITE, Store, append, append_raw, commit};
+use support::{Bundle, Failure, SITE, Store, append, append_pax_sized, append_raw, commit};
 
 type Outcome = Result<(), Failure>;
 
@@ -203,5 +203,33 @@ async fn a_second_deploy_of_the_same_commit_returns_the_first() -> Outcome {
         .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
         .collect::<Result<_, _>>()?;
     assert_eq!(bundles, vec![commit('8')], "one directory for the commit");
+    store.cleanup().await
+}
+
+/// Review M2: the limit counts the bytes of an entry, not the ustar size field, which a PAX `size`
+/// record overrides.
+#[tokio::test]
+async fn a_pax_size_record_cannot_pass_the_limit() -> Outcome {
+    let store = Store::with_limit(5, 4096).await?;
+    let payload = vec![b'x'; 5000];
+    let bundle = Bundle::new(&commit('9')).with("big.bin", &payload, false);
+    let listed: Vec<_> = bundle
+        .files
+        .iter()
+        .filter(|(path, ..)| path != "big.bin")
+        .cloned()
+        .collect();
+    let archive = bundle.archive_with(&listed, |builder| {
+        append_pax_sized(builder, "big.bin", &payload)
+    })?;
+    let refused = refusal(&store, archive).await?;
+    assert_eq!(
+        refused
+            .as_ref()
+            .map(|(code, status, _)| (code.as_str(), *status)),
+        Some(("sites.bundle.too_large", 413)),
+        "a bundle of 5000 bytes and more is over the limit of 4096: {refused:?}"
+    );
+    assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
     store.cleanup().await
 }
