@@ -10,6 +10,24 @@ const EXAMPLE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../deploy/systemd/sites.conf.example"
 );
+const SYSUSERS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../deploy/sysusers.d/ratatoskr-sites.conf"
+);
+
+/// The read group of the notes blob root. `ratatoskr-notes` owns it; OBS-023 creates it.
+const NOTES_BLOB_GROUP: &str = "ratatoskr-notes-blobs";
+
+/// The entries of a sysusers.d file: one list of fields for each line that is not a comment. A
+/// quoted GECOS field can hold spaces, so only the first fields of a line are reliable; the test
+/// reads the type, the name and the group of an `m` line, which come first.
+fn sysusers_entries(text: &str) -> Vec<Vec<&str>> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.split_whitespace().collect())
+        .collect()
+}
 
 /// The statements of an SQL file: comment lines removed, whitespace collapsed, lower case.
 fn statements(sql: &str) -> String {
@@ -58,6 +76,33 @@ fn role_file_creates_the_unprivileged_sites_role() -> Result<(), Box<dyn std::er
         example.lines().any(|line| line.trim()
             == "RATATOSKR__DATABASE__URL=postgres://ratatoskr_sites:CHANGE-ME@127.0.0.1:5432/ratatoskr"),
         "the example connects as ratatoskr_sites to the shared database ratatoskr"
+    );
+    Ok(())
+}
+
+#[test]
+fn sysusers_adds_sites_to_the_notes_blob_group() -> Result<(), Box<dyn std::error::Error>> {
+    let text = std::fs::read_to_string(SYSUSERS)?;
+    let entries = sysusers_entries(&text);
+
+    assert!(
+        entries
+            .iter()
+            .any(|fields| fields.as_slice() == ["m", "ratatoskr-sites", NOTES_BLOB_GROUP]),
+        "the file holds the line `m ratatoskr-sites {NOTES_BLOB_GROUP}`: {entries:?}"
+    );
+    assert!(
+        !entries.iter().any(|fields| matches!(
+            fields.as_slice(),
+            ["g" | "u", name, ..] if *name == NOTES_BLOB_GROUP
+        )),
+        "the file joins {NOTES_BLOB_GROUP} and creates no group of that name: {entries:?}"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|fields| fields.starts_with(&["u", "ratatoskr-sites"])),
+        "the file still creates the user ratatoskr-sites: {entries:?}"
     );
     Ok(())
 }
