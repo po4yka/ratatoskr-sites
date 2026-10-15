@@ -391,3 +391,84 @@ async fn publication_of_another_revision_does_not_keep_a_new_key() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+/// The stored revision and the publications of each source row of `path` in the current release.
+async fn rows_of(fixture: &Fixture, path: &str) -> Result<Vec<(String, Vec<String>)>, Failure> {
+    Ok(sqlx::query_as(
+        "select s.file -> 'revision' -> 'digest' ->> 'hex', s.publication_ids \
+         from sites.release_sources s join sites.current_releases c \
+         on c.release_id = s.release_id where s.path = $1",
+    )
+    .bind(path)
+    .fetch_all(fixture.database.pool())
+    .await?)
+}
+
+#[tokio::test]
+async fn manual_publication_gains_no_new_attachment_revision() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set release_mode = 'manual'")
+        .execute(fixture.database.pool())
+        .await?;
+    let old = b"\x89PNG old image";
+    let new = b"\x89PNG new image that pub-r never released";
+    fixture.add_file("img/x.png", old, "image/png")?;
+    fixture.add_indexed(
+        json!({
+            "path": "shared/n.md",
+            "embeds": [{ "link": "img/x.png", "display_text": "img/x.png", "form": "wiki",
+                         "target": "img/x.png" }],
+        }),
+        "A shared note.\n\n![[img/x.png]]\n",
+    )?;
+    publication(&fixture, "pub-a", &["shared"]).await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'automatic' where publication_id = 'pub-a'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-a"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    let new_hex = ratatoskr_sites_release::sha256_hex(new);
+
+    // Only the attachment changes: the automatic pub-a reads its new revision, the manual pub-r
+    // the released one; both still join the note, whose revision did not change.
+    fixture.replace("img/x.png", new, "image/png")?;
+    let (bus, running, api) = started(&fixture).await?;
+    sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at) values ($1, $2, 'file_change', null, now())",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(SITE)
+    .execute(fixture.database.pool())
+    .await?;
+    running.shared.servable.wake(SITE);
+    built(&fixture).await?;
+    assert_eq!(
+        rows_of(&fixture, "img/x.png").await?,
+        vec![(new_hex.clone(), vec!["pub-a".to_owned()])],
+        "only pub-a, which read the new revision, publishes it"
+    );
+
+    delete(&api, &fixture, "pub-a").await?;
+    built(&fixture).await?;
+    let asset = call(
+        &api,
+        anonymous(
+            Method::GET,
+            &format!("/v1/sites/{SITE}/content/assets/{new_hex}"),
+        )?,
+    )
+    .await?;
+    assert_eq!(
+        asset.status,
+        StatusCode::NOT_FOUND,
+        "pub-r alone never serves bytes that it did not release"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
