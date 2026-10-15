@@ -83,6 +83,6 @@
 
 - [x] 13.1 RED (5.62): add `removal_build.rs::flagged_notes_stay_published_after_builds_from_the_release`: a flagged manual publication publishes a note with `publish: "site-r"` and a note with the tag `#public` (included as `Public`); both stay published after a removal build and after an automatic build that reads the manual publication from the release. Confirm that the slug assertion fails because the build from the release selects again on the projection, which lost both inputs.
 - [x] 13.2 GREEN (5.63): store in each source row the publications that selected it, and build a publication from the release from exactly its rows, without selecting again; keep in the projection only what rendering reads. Verify 13.1.
-- [ ] 13.3 RED (5.64): add comment canaries to `release_sources.rs` (an alias and a heading subpath of a link inside a `%%` comment). Confirm that the canary assertion fails because the projection keeps every link whose target is published.
+- [x] 13.3 RED (5.64): add comment canaries to `release_sources.rs` (an alias and a heading subpath of a link inside a `%%` comment). Confirm that the canary assertion fails because the projection keeps every link whose target is published.
 - [ ] 13.4 GREEN (5.65): store only the links and embeds that the rendered page resolved, without `display_text`. Verify 13.3.
 - [ ] 13.5 (5.66) Correct the comment on the removal requests that wait, design 14 for manual publications, and document a note that a manual and an automatic publication both select. No test: documentation.
