@@ -274,3 +274,60 @@ async fn widened_allowlist_shows_no_new_key_in_a_build_from_the_release() -> Out
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn selection_inputs_come_from_the_stored_revision() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set release_mode = 'manual'")
+        .execute(fixture.database.pool())
+        .await?;
+    fixture.add_note("shared/n.md", "# Shared\n\nA shared note.\n")?;
+    publication(&fixture, "pub-z", &["shared"]).await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'automatic' where publication_id = 'pub-z'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-z"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+
+    // The note now says publish: true. The automatic pub-z reads it from the notes index; the
+    // manual pub-r reads the released revision, which has no publish value, and its id comes
+    // first, so that revision is the one that the row stores.
+    fixture.change(
+        "shared/n.md",
+        "---\npublish: true\n---\n# Shared\n\nA shared note, changed.\n",
+    )?;
+    let (bus, running, api) = started(&fixture).await?;
+    sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at) values ($1, $2, 'file_change', null, now())",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(SITE)
+    .execute(fixture.database.pool())
+    .await?;
+    running.shared.servable.wake(SITE);
+    built(&fixture).await?;
+
+    // pub-r becomes flagged: a removal build from the release; the stored revision does not
+    // flag the note, so pub-r drops it.
+    put(
+        &api,
+        &fixture,
+        "pub-r",
+        &pub_r(&fixture, "flagged", &["private"]),
+    )
+    .await?;
+    built(&fixture).await?;
+    assert_eq!(
+        publications_of(&fixture, "shared/n.md").await?,
+        vec![vec!["pub-z".to_owned()]],
+        "the selection inputs come from the revision that the row stores"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
