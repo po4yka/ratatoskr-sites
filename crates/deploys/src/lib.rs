@@ -14,7 +14,10 @@
 //! ```
 
 mod activation;
+mod projection;
 mod receipt;
+
+pub use crate::projection::{SITE_JSON, SiteProjection, write_projection};
 
 use std::path::PathBuf;
 use std::sync::Arc;

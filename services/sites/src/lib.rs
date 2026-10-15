@@ -158,6 +158,7 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
         servable: Servable::load(&database)
             .await
             .map_err(|error| format!("the servable sites could not be read: {error}"))?,
+        sites_tree: Some(config.deploys.root.clone()),
     };
     let notes = NotesAccess::new(
         notes_index(config),

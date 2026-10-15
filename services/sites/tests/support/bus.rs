@@ -291,6 +291,7 @@ impl super::Fixture {
         let shared = ratatoskr_sites::triggers::Shared {
             database: self.database.database.clone(),
             servable: ratatoskr_sites::servable::Servable::load(&self.database.database).await?,
+            sites_tree: Some(self.deploys_root.path().to_path_buf()),
         };
         let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(permits));

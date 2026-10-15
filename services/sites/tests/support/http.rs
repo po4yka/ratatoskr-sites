@@ -111,6 +111,7 @@ impl Fixture {
         let shared = Shared {
             database: self.database.database.clone(),
             servable: Servable::load(&self.database.database).await?,
+            sites_tree: Some(self.deploys_root.path().to_path_buf()),
         };
         self.api_of(&shared).await
     }

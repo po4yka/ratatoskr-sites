@@ -4,6 +4,7 @@
 //! The service never publishes a command. A build command of Edge and a note change both become a
 //! row of `sites.build_requests`, which the build worker takes.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ratatoskr_event_envelope::{CommandEnvelope, EventEnvelope};
@@ -11,6 +12,7 @@ use ratatoskr_notes_contracts::{FileChanged, VaultDisconnected, VaultPath};
 use ratatoskr_sites_contracts::{
     ApprovalState, PublicationId, ReleaseBuildRequested, SiteApprovalChanged, SiteId,
 };
+use ratatoskr_sites_deploys::{SiteProjection, write_projection};
 use ratatoskr_sites_persistence::Database;
 use ratatoskr_sites_publications::{Publication, PublicationMode, select};
 use tokio::task::JoinHandle;
@@ -34,6 +36,9 @@ enum ApplyError {
     /// The report of an operation could not be written.
     #[error("an operation report could not be written")]
     Report(#[from] BuildFailure),
+    /// The gateway projection could not be written.
+    #[error("the gateway projection could not be written")]
+    Projection(#[source] std::io::Error),
 }
 
 /// What the consumers, the build worker and the routes share.
@@ -43,6 +48,9 @@ pub struct Shared {
     pub database: Database,
     /// The servable sites.
     pub servable: Arc<Servable>,
+    /// The sites tree where the approval consumer writes the gateway projection of each site
+    /// (SITE-026); `None` writes none.
+    pub sites_tree: Option<PathBuf>,
 }
 
 /// The durables to consume and where.
@@ -84,6 +92,7 @@ pub fn start<I: NotesIndex + 'static, B: SiteBuilds>(
 pub struct Triggers<I> {
     database: Database,
     servable: Arc<Servable>,
+    sites_tree: Option<PathBuf>,
     index: I,
     queue: BuildQueue,
 }
@@ -95,6 +104,7 @@ impl<I: NotesIndex + 'static> Triggers<I> {
         Self {
             database: shared.database,
             servable: shared.servable,
+            sites_tree: shared.sites_tree,
             index,
             queue,
         }
@@ -422,7 +432,30 @@ impl<I: NotesIndex + 'static> Triggers<I> {
         self.servable
             .refresh(&self.database, change.site_id.as_str())
             .await?;
+        self.project(change.site_id.as_str()).await?;
         Ok(Disposition::Done)
+    }
+
+    /// Rewrite the gateway projection `site.json` of `site_id` from the approval projection, which
+    /// an older event does not change (SITE-026, workspace design D2).
+    async fn project(&self, site_id: &str) -> Result<(), ApplyError> {
+        let Some(root) = self.sites_tree.clone() else {
+            return Ok(());
+        };
+        let row: Option<(String, String)> = sqlx::query_as(
+            "select state, hostname from sites.approval_projection where site_id = $1",
+        )
+        .bind(site_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        let Some((state, hostname)) = row else {
+            return Ok(());
+        };
+        let projection = SiteProjection::of(site_id, state == "approved", &hostname);
+        tokio::task::spawn_blocking(move || write_projection(&root, &projection))
+            .await
+            .map_err(|_| ApplyError::Projection(std::io::Error::other("the write stopped")))?
+            .map_err(ApplyError::Projection)
     }
 }
 

@@ -64,3 +64,11 @@ manifest `sites/site-manifest.v1`, the approval event, Platform's `identity.site
 `sites.sites` hold no repository. So the receipt cannot refuse a bundle of another repository whose
 manifest names the site, and this change does not invent a repository field. The gap is reported to
 the workspace.
+
+### 9. `site.json` holds the site, the approval state and the hostnames
+
+`site.json` is `{"site_id", "approved", "hostnames"}`, written from the approval projection after
+the event is applied, so an older event that the projection ignores rewrites the newer state. A site
+that is not approved lists no hostname. The workspace design also names the retention; the gateway
+does not read it, so the file leaves it out, and the retention stays a setting of the sites service.
+The approval projection holds one hostname, lower-cased in the file.
