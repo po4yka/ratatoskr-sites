@@ -33,17 +33,27 @@ pub(crate) fn activate(
     if before.as_deref() == Some(commit) {
         return Ok(linked(site_dir, PREVIOUS));
     }
+    // When the link was last replaced: the last activation. A deploy stored after it waits for
+    // its own activation, so the retention below keeps it.
+    let last_activation = std::fs::symlink_metadata(site_dir.join(CURRENT))
+        .and_then(|link| link.modified())
+        .ok();
     switch(site_dir, CURRENT, &target)?;
     if let Some(before) = &before {
         switch(site_dir, PREVIOUS, &PathBuf::from(BUNDLES).join(before))?;
     }
-    retain(site_dir, retention)?;
+    retain(site_dir, retention, last_activation)?;
     Ok(before)
 }
 
-/// Keep the current deploy, the previous deploy and the newest others up to `retention` deploys in
-/// all, by the time each deploy directory was stored, and remove the rest.
-fn retain(site_dir: &Path, retention: usize) -> Result<(), DeployError> {
+/// Keep the current deploy, the previous deploy, every deploy stored after `last_activation`, and
+/// the newest others up to `retention` deploys in all, by the time each deploy directory was
+/// stored, and remove the rest.
+fn retain(
+    site_dir: &Path,
+    retention: usize,
+    last_activation: Option<std::time::SystemTime>,
+) -> Result<(), DeployError> {
     let linked: Vec<String> = [CURRENT, PREVIOUS]
         .iter()
         .filter_map(|name| linked(site_dir, name))
@@ -59,6 +69,9 @@ fn retain(site_dir: &Path, retention: usize) -> Result<(), DeployError> {
             .metadata()
             .and_then(|metadata| metadata.modified())
             .map_err(DeployError::Storage)?;
+        if last_activation.is_some_and(|activated| stored_at > activated) {
+            continue;
+        }
         others.push((stored_at, commit, entry.path()));
     }
     // The newest first; one time breaks ties by the commit, so the order is stable.

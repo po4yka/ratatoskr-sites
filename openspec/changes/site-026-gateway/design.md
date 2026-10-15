@@ -46,8 +46,11 @@ asserts the links and that the stored deploy is the same directory as before.
 
 ### 6. Retention
 
-After an activation, the store keeps the current and the previous deploy and the newest others up to
-the retention count, by the time that each deploy directory was stored, and removes the rest.
+After an activation, the store keeps the current and the previous deploy, every deploy stored after
+the last activation (the time `current` was last replaced), and the newest others up to the
+retention count, by the time that each deploy directory was stored, and removes the rest. A deploy
+uploaded ahead therefore survives a rollback, also with a retention of two (review M4). Uploads that
+are never activated are bounded only by the bundle size limit and the owner's deploy device.
 
 ### 7. The deploy routes check the device claim again
 
