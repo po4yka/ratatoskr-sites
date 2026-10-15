@@ -20,8 +20,8 @@
 
 ## 5. Release build (workspace tasks 5.18, 5.19)
 
-- [ ] 5.1 RED: add `services/sites/tests/release_build.rs` with the three tests of workspace task 5.18, against a stub notes index and a test database. Confirm that the release-count assertion of the first fails because every build stores a new release row.
-- [ ] 5.2 GREEN: implement the release document, the release id with `serde_jcs`, the full rebuild and the operation report. Verify 5.1.
+- [x] 5.1 RED: add `services/sites/tests/release_build.rs` with the three tests of workspace task 5.18, against a stub notes index and a test database. Confirm that the release-count assertion of the first fails because every build stores a new release row.
+- [x] 5.2 GREEN: implement the release document, the release id with `serde_jcs`, the full rebuild and the operation report. Verify 5.1.
 
 ## 6. Release switch (workspace tasks 5.20, 5.21)
 

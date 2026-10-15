@@ -14,6 +14,9 @@ path = "src/main.rs"
 [dependencies]
 ratatoskr-sites-persistence.workspace = true
 ratatoskr-identifiers.workspace       = true
+ratatoskr-event-envelope.workspace    = true
+ratatoskr-error-contracts.workspace   = true
+ratatoskr-operation-contracts.workspace = true
 ratatoskr-sites-contracts.workspace   = true
 ratatoskr-sites-publications.workspace = true
 ratatoskr-sites-release.workspace     = true
@@ -23,6 +26,7 @@ metrics-exporter-prometheus.workspace = true
 secrecy.workspace                     = true
 serde.workspace                       = true
 serde_json.workspace                  = true
+serde_jcs.workspace                   = true
 sha2.workspace                        = true
 sqlx.workspace                        = true
 thiserror.workspace                   = true

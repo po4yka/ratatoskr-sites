@@ -27,6 +27,11 @@ ratatoskr-sites-release      = { version = "0.1.0", path = "crates/release" }
 # `sites/site-manifest.v1`, `sites/release.v1`, `sites/page.v1` and the site messages.
 ratatoskr-identifiers     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
 ratatoskr-sites-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
+# The envelope of the outbox rows, and the operation report `platform.operation.reported.v1` of a
+# build (workspace spec site-publications, "A build is one operation of the sites lane").
+ratatoskr-event-envelope      = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
+ratatoskr-error-contracts     = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
+ratatoskr-operation-contracts = { git = "https://github.com/po4yka/ratatoskr-contracts.git", rev = "df646b0b08ab9f63bee92d1067d39427114b8727" }
 
 # ---- persistence ----
 # No `migrate` feature: the schema is one file, `include_str!`d into the binary by
@@ -50,6 +55,10 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 # ammonia 4.1 and later depend on cssparser (MPL-2.0, not in deny.toml), and 4.0 has open
 # RustSec advisories.
 html5ever = "0.40"
+
+# The RFC 8785 (JCS) form of the release document, whose SHA-256 is the release id (workspace
+# design D4).
+serde_jcs = "0.2"
 
 # ---- note bytes ----
 # The fresh SHA-256 of a note blob before it is used (workspace spec blob-references). RustCrypto,
