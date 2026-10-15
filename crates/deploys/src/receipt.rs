@@ -152,8 +152,14 @@ fn unpack(
     Ok((manifest, received))
 }
 
-/// `path` when it is a confined bundle path in NFC.
+/// The first segment that the gateway reserves for forwarding to Edge.
+const FORWARDING_PREFIX: &str = "_r";
+
+/// `path` when it is a confined bundle path in NFC outside the forwarding prefix `_r/`.
 pub(crate) fn checked(path: &str) -> Result<String, DeployError> {
+    if path.split('/').next() == Some(FORWARDING_PREFIX) {
+        return Err(DeployError::ReservedPath(path.to_owned()));
+    }
     if !is_nfc(path) || BundlePath::parse(path).is_err() {
         return Err(DeployError::UnsafePath(path.to_owned()));
     }
