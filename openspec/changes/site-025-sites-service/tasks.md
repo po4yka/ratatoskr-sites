@@ -10,8 +10,8 @@
 
 ## 3. Read group membership (workspace tasks 5.6, 5.7)
 
-- [ ] 3.1 RED: add `services/sites/tests/deploy_files.rs::sysusers_adds_sites_to_the_notes_blob_group`, which asserts the line `m ratatoskr-sites ratatoskr-notes-blobs` and no group of that name. Run it and confirm that the line assertion fails because the scaffolded file has no membership line.
-- [ ] 3.2 GREEN: add the membership line. Verify 3.1.
+- [x] 3.1 RED: add `services/sites/tests/deploy_files.rs::sysusers_adds_sites_to_the_notes_blob_group`, which asserts the line `m ratatoskr-sites ratatoskr-notes-blobs` and no group of that name. Run it and confirm that the line assertion fails because the scaffolded file has no membership line.
+- [x] 3.2 GREEN: add the membership line. Verify 3.1.
 
 ## 4. Verified note reads (workspace tasks 5.8, 5.9)
 

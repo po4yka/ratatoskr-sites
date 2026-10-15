@@ -25,10 +25,11 @@ against a PostgreSQL 17 container.
 ### 3. The sysusers file joins the group and does not create it
 
 The group `ratatoskr-notes-blobs` belongs to `ratatoskr-notes` and the deploy role of the workspace
-creates it (OBS-023). A `g` line here would create the group on a host where notes is not installed,
-and the root would then have a group that notes does not expect. So the file holds only the line
-`m ratatoskr-sites ratatoskr-notes-blobs`, and a test fails when the file creates a group of that
-name.
+creates it (OBS-023). A `g` line here would declare a second owner of the group. So the file holds
+only the line `m ratatoskr-sites ratatoskr-notes-blobs`, and a test fails when the file has a `g` or
+`u` line of that name. An `m` line makes `systemd-sysusers` create a group that does not exist yet
+(sysusers.d(5)); the deploy role then finds the group by its name and uses it for the root, so the
+order of the two does not change the result.
 
 ### 4. The reader checks everything before it reads, and hashes what it read
 

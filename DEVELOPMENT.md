@@ -93,7 +93,7 @@ no migrations).
 | `deploy/nats/identity.conf` | A copy of the `SITES` stanza of Platform's NATS authorization file. |
 | `deploy/systemd/sites.conf.example` | The environment file of the service on the host. |
 | `deploy/systemd/ratatoskr-sites.service` | The unit of the service. |
-| `deploy/sysusers.d/ratatoskr-sites.conf` | The system user `ratatoskr-sites`. |
+| `deploy/sysusers.d/ratatoskr-sites.conf` | The system user `ratatoskr-sites`, and its membership in the read group `ratatoskr-notes-blobs` of the notes blob root. The group, the setgid root and the umask of notes come from OBS-023. |
 
 ## Workflow
 

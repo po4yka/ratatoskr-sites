@@ -56,6 +56,9 @@ UMask=0077
 # `ratatoskr` is the shared group of every Ratatoskr unit: /etc/ratatoskr is 0750 root:ratatoskr and
 # /mnt/nvme/ratatoskr/logs 0770 root:ratatoskr (ratatoskr-platform deploy/README.md step 1), so
 # without it this process cannot reach its own nkey seed. `Group=` sets the primary group only.
+# The read group of the notes blob root, `ratatoskr-notes-blobs`, is not named here:
+# deploy/sysusers.d/ratatoskr-sites.conf makes the user a member, and systemd gives the process
+# every group of its user.
 SupplementaryGroups=ratatoskr
 # The sites blob root holds the pages and the assets of each release. The service reads note bytes
 # from the notes blob root and never writes there.
