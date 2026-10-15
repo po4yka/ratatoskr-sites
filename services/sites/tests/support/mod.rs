@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use ratatoskr_sites::notes_blobs::NotesBlobReader;
-use ratatoskr_sites::notes_index::{IndexUnavailable, NotesIndex};
+use ratatoskr_sites::notes_index::{IndexError, NotesIndex};
 use ratatoskr_sites::release_build::{BuildRequest, ReleaseBuilder};
 use ratatoskr_sites_persistence::test_support::TestDatabase;
 use ratatoskr_sites_publications::IndexedFile;
@@ -59,9 +59,9 @@ impl StubIndex {
 }
 
 impl NotesIndex for StubIndex {
-    async fn files(&self, connection_id: Uuid) -> Result<Vec<IndexedFile>, IndexUnavailable> {
+    async fn files(&self, connection_id: Uuid) -> Result<Vec<IndexedFile>, IndexError> {
         if connection_id != self.connection {
-            return Err(IndexUnavailable);
+            return Err(IndexError::Unavailable);
         }
         let failing = self.failures.fetch_update(
             std::sync::atomic::Ordering::SeqCst,
@@ -69,9 +69,13 @@ impl NotesIndex for StubIndex {
             |left| left.checked_sub(1),
         );
         if failing.is_ok() {
-            return Err(IndexUnavailable);
+            return Err(IndexError::Unavailable);
         }
-        Ok(self.files.lock().map_err(|_| IndexUnavailable)?.clone())
+        Ok(self
+            .files
+            .lock()
+            .map_err(|_| IndexError::Unavailable)?
+            .clone())
     }
 }
 
