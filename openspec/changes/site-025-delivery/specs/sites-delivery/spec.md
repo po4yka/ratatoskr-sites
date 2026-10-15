@@ -72,11 +72,17 @@ not release.
 ### Requirement: The sources of a release hold only what it publishes
 
 `sites.release_sources` SHALL hold, for each note and attachment that a release publishes, only a
-projection of its indexed file: the links and embeds whose target the release publishes, the
-frontmatter keys that its publications allow, and the tags that they include. An attachment SHALL
-be there only by a path that a published note links to or embeds.
+projection of its indexed file, which holds only what rendering reads, and the publications that
+selected it. An attachment SHALL be there only by a path that a published note links to or embeds.
+A build from the release SHALL take, for each publication, exactly the rows that it selected, and
+SHALL NOT select again.
 
 #### Scenario: The privacy fixture with copies of a published image
 
 - **WHEN** the privacy fixture, with copies of a published image in `private/` and `.obsidian/`, is built
 - **THEN** no column of any source row holds a canary, a private path or a field outside the allowlist, verified by `services/sites/tests/release_sources.rs::sources_hold_nothing_of_an_unselected_file`
+
+#### Scenario: Flagged notes in a build from the release
+
+- **WHEN** a flagged manual publication publishes a note with `publish: "site-r"` and a note with the tag `#public`, and a removal build and then an automatic build of the site read it from the release
+- **THEN** both notes stay published, verified by `services/sites/tests/removal_build.rs::flagged_notes_stay_published_after_builds_from_the_release`

@@ -166,6 +166,9 @@ create table sites.release_sources (
     -- a removal build rebuilds from these files and never reads the notes index, so it publishes
     -- no note change that the owner did not release.
     file           jsonb not null,
+    -- The publications that selected the note; empty for an attachment. A build from the release
+    -- takes exactly these rows for each publication and does not select again.
+    publication_ids text[] not null default '{}',
     primary key (release_id, connection_id, path)
 );
 

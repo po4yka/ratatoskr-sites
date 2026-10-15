@@ -173,8 +173,13 @@ struct PublicationRow {
     released: bool,
 }
 
-/// The files of one vault connection, from the notes index or from the current release.
-type FilesKey = (Uuid, bool);
+/// The files of one vault connection from the notes index (`None`), or the files of the current
+/// release that one publication selected (`Some(publication id)`).
+type FilesKey = (Uuid, Option<String>);
+
+/// One file of the current release: its vault connection, the projection of its indexed file, and
+/// the publications that selected it.
+type ReleasedFile = (Uuid, IndexedFile, Vec<String>);
 
 impl<I: NotesIndex> ReleaseBuilder<I> {
     /// A builder that reads the index from `index`, note bytes with `notes` within
@@ -344,18 +349,29 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         rows: &[PublicationRow],
     ) -> Result<BTreeMap<FilesKey, Vec<IndexedFile>>, BuildFailure> {
         let mut indexes: BTreeMap<FilesKey, Vec<IndexedFile>> = BTreeMap::new();
-        if rows.iter().any(|row| row.released) {
-            for (connection_id, files) in self.released_files(&job.site_id).await? {
-                indexes.insert((connection_id, true), files);
-            }
-        }
+        let released = if rows.iter().any(|row| row.released) {
+            self.released_files(&job.site_id).await?
+        } else {
+            Vec::new()
+        };
         for row in rows {
             if row.released {
-                indexes.entry((row.connection_id, true)).or_default();
+                // Exactly the notes that the publication selected in the current release, and the
+                // attachments of the release; nothing is selected again.
+                let files = released
+                    .iter()
+                    .filter(|(connection_id, _, publications)| {
+                        *connection_id == row.connection_id
+                            && (publications.is_empty()
+                                || publications.contains(&row.publication_id))
+                    })
+                    .map(|(_, file, _)| file.clone())
+                    .collect();
+                indexes.insert((row.connection_id, Some(row.publication_id.clone())), files);
                 continue;
             }
             if let std::collections::btree_map::Entry::Vacant(vacant) =
-                indexes.entry((row.connection_id, false))
+                indexes.entry((row.connection_id, None))
             {
                 let files =
                     self.index
@@ -371,14 +387,12 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         Ok(indexes)
     }
 
-    /// The indexed files that the current release of `site_id` was built from, by vault connection:
-    /// each note and attachment that it publishes, as the notes index gave it then.
-    async fn released_files(
-        &self,
-        site_id: &str,
-    ) -> Result<BTreeMap<Uuid, Vec<IndexedFile>>, BuildFailure> {
-        let rows: Vec<(Uuid, serde_json::Value)> = sqlx::query_as(
-            "select s.connection_id, s.file from sites.release_sources s \
+    /// The files that the current release of `site_id` was built from: for each published note
+    /// and attachment, its vault connection, the projection of its indexed file, and the
+    /// publications that selected it (none for an attachment).
+    async fn released_files(&self, site_id: &str) -> Result<Vec<ReleasedFile>, BuildFailure> {
+        let rows: Vec<(Uuid, serde_json::Value, Vec<String>)> = sqlx::query_as(
+            "select s.connection_id, s.file, s.publication_ids from sites.release_sources s \
              join sites.current_releases c on c.release_id = s.release_id \
              where c.site_id = $1 order by s.connection_id, s.path",
         )
@@ -386,13 +400,13 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .fetch_all(self.database.pool())
         .await
         .map_err(BuildFailure::Database)?;
-        let mut files: BTreeMap<Uuid, Vec<IndexedFile>> = BTreeMap::new();
-        for (connection_id, file) in rows {
-            let file: IndexedFile =
-                serde_json::from_value(file).map_err(|_| BuildFailure::PublicationInvalid)?;
-            files.entry(connection_id).or_default().push(file);
-        }
-        Ok(files)
+        rows.into_iter()
+            .map(|(connection_id, file, publications)| {
+                serde_json::from_value(file)
+                    .map(|file| (connection_id, file, publications))
+                    .map_err(|_| BuildFailure::PublicationInvalid)
+            })
+            .collect()
     }
 
     /// Read every selected note with the bound of the reader, and build the release.
@@ -649,14 +663,28 @@ fn site_input<'a>(
     let site = SiteId::parse(site_id).map_err(|_| BuildFailure::SiteNotFound)?;
     let mut publications = Vec::with_capacity(rows.len());
     for row in rows {
-        let files = indexes
-            .get(&(row.connection_id, row.released))
-            .ok_or(BuildFailure::IndexUnavailable)?;
-        publications.push(PublicationInput {
-            publication: Publication {
+        let key = (
+            row.connection_id,
+            row.released.then(|| row.publication_id.clone()),
+        );
+        let files = indexes.get(&key).ok_or(BuildFailure::IndexUnavailable)?;
+        let publication_id = PublicationId::parse(&row.publication_id)
+            .map_err(|_| BuildFailure::PublicationInvalid)?;
+        let publication = if row.released {
+            // The files are the notes that the publication selected in the current release; the
+            // mode `all` without folders or tags takes each of them as it is.
+            Publication {
                 site_id: site.clone(),
-                publication_id: PublicationId::parse(&row.publication_id)
-                    .map_err(|_| BuildFailure::PublicationInvalid)?,
+                publication_id,
+                mode: PublicationMode::All,
+                included_folders: Vec::new(),
+                excluded_folders: Vec::new(),
+                included_tags: Vec::new(),
+            }
+        } else {
+            Publication {
+                site_id: site.clone(),
+                publication_id,
                 mode: match row.mode.as_str() {
                     "all" => PublicationMode::All,
                     _ => PublicationMode::Flagged,
@@ -664,7 +692,10 @@ fn site_input<'a>(
                 included_folders: row.included_folders.clone(),
                 excluded_folders: row.excluded_folders.clone(),
                 included_tags: row.included_tags.clone(),
-            },
+            }
+        };
+        publications.push(PublicationInput {
+            publication,
             connection_id: row.connection_id.to_string(),
             frontmatter_allow: row.frontmatter_allow.clone(),
             files,
