@@ -404,3 +404,55 @@ async fn file_change_build_gives_a_manual_publication_no_attachment() -> Outcome
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn non_ascii_tag_survives_a_build_from_the_release() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'manual', \
+         excluded_folders = '{private,flag}'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    fixture.add_indexed(
+        json!({ "path": "flag/u.md", "tags": ["#Öffentlich"] }),
+        "Tagged with a tag that is not ASCII.\n",
+    )?;
+    publication(
+        &fixture,
+        "pub-f",
+        "flagged",
+        &["flag"],
+        &[],
+        &["Öffentlich"],
+    )
+    .await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-f"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    let (slugs, _) = released(&fixture).await?;
+    assert!(
+        slugs.contains(&"flag/u".to_owned()),
+        "the command build publishes flag/u"
+    );
+    let (bus, running, api) = started(&fixture).await?;
+
+    // An unchanged PUT of pub-f: a removal build from the release; the configuration still
+    // selects the note.
+    put(&api, &fixture, "pub-f", &json!({
+        "connection_id": fixture.index.connection(), "mode": "flagged", "release_mode": "manual",
+        "included_folders": ["flag"], "excluded_folders": [],
+        "included_tags": ["Öffentlich"], "frontmatter_allow": [],
+    }))
+    .await?;
+    built(&fixture).await?;
+    let (slugs, _) = released(&fixture).await?;
+    assert!(
+        slugs.contains(&"flag/u".to_owned()),
+        "the current configuration still selects flag/u: {slugs:?}"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
