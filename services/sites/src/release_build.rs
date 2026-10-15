@@ -167,7 +167,14 @@ struct PublicationRow {
     excluded_folders: Vec<String>,
     included_tags: Vec<String>,
     frontmatter_allow: Vec<String>,
+    /// `true` when the build reads the files of the publication from the current release, not
+    /// from the notes index: in a build from the release, and for a manual publication in a build
+    /// that no command requested.
+    released: bool,
 }
+
+/// The files of one vault connection, from the notes index or from the current release.
+type FilesKey = (Uuid, bool);
 
 impl<I: NotesIndex> ReleaseBuilder<I> {
     /// A builder that reads the index from `index`, note bytes with `notes` within
@@ -246,12 +253,14 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             Vec<String>,
             Vec<String>,
             Vec<String>,
+            String,
         );
         let site_id = job.site_id.as_str();
         let explicit = job.explicit;
         let rows: Vec<Row> = sqlx::query_as(
             "select publication_id, connection_id, mode, included_folders, excluded_folders, \
-             included_tags, frontmatter_allow from sites.publications where site_id = $1 \
+             included_tags, frontmatter_allow, release_mode from sites.publications \
+             where site_id = $1 \
              and ($2 or publication_id in (select jsonb_array_elements_text(convert_from( \
              r.document, 'UTF8')::jsonb -> 'publication_ids') from sites.current_releases c \
              join sites.releases r on r.release_id = c.release_id where c.site_id = $1)) \
@@ -265,7 +274,16 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         let rows: Vec<PublicationRow> = rows
             .into_iter()
             .map(
-                |(publication_id, connection_id, mode, included, excluded, tags, allow)| {
+                |(
+                    publication_id,
+                    connection_id,
+                    mode,
+                    included,
+                    excluded,
+                    tags,
+                    allow,
+                    release,
+                )| {
                     PublicationRow {
                         publication_id,
                         connection_id,
@@ -274,6 +292,8 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                         excluded_folders: excluded,
                         included_tags: tags,
                         frontmatter_allow: allow,
+                        // A manual publication releases only what a command asks for.
+                        released: job.from_release || (!explicit && release == "manual"),
                     }
                 },
             )
@@ -316,25 +336,26 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         self.store(site_id, owner, &built, &provenance).await
     }
 
-    /// The files of each vault connection of `rows`: from the notes index, or, for a build from the
-    /// release, the files that the current release was built from.
+    /// The files of each vault connection of `rows`: from the notes index, or, for a row that
+    /// reads the release, the files that the current release was built from.
     async fn indexes(
         &self,
         job: &BuildJob,
         rows: &[PublicationRow],
-    ) -> Result<BTreeMap<Uuid, Vec<IndexedFile>>, BuildFailure> {
-        let mut indexes = if job.from_release {
-            self.released_files(&job.site_id).await?
-        } else {
-            BTreeMap::new()
-        };
+    ) -> Result<BTreeMap<FilesKey, Vec<IndexedFile>>, BuildFailure> {
+        let mut indexes: BTreeMap<FilesKey, Vec<IndexedFile>> = BTreeMap::new();
+        if rows.iter().any(|row| row.released) {
+            for (connection_id, files) in self.released_files(&job.site_id).await? {
+                indexes.insert((connection_id, true), files);
+            }
+        }
         for row in rows {
-            if job.from_release {
-                indexes.entry(row.connection_id).or_default();
+            if row.released {
+                indexes.entry((row.connection_id, true)).or_default();
                 continue;
             }
             if let std::collections::btree_map::Entry::Vacant(vacant) =
-                indexes.entry(row.connection_id)
+                indexes.entry((row.connection_id, false))
             {
                 let files =
                     self.index
@@ -623,13 +644,13 @@ fn safe_message(text: &str) -> String {
 fn site_input<'a>(
     site_id: &str,
     rows: &[PublicationRow],
-    indexes: &'a BTreeMap<Uuid, Vec<IndexedFile>>,
+    indexes: &'a BTreeMap<FilesKey, Vec<IndexedFile>>,
 ) -> Result<SiteInput<'a>, BuildFailure> {
     let site = SiteId::parse(site_id).map_err(|_| BuildFailure::SiteNotFound)?;
     let mut publications = Vec::with_capacity(rows.len());
     for row in rows {
         let files = indexes
-            .get(&row.connection_id)
+            .get(&(row.connection_id, row.released))
             .ok_or(BuildFailure::IndexUnavailable)?;
         publications.push(PublicationInput {
             publication: Publication {
