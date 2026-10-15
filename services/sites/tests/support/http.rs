@@ -64,6 +64,18 @@ pub(crate) fn owner(
         .body(Body::from(body))?)
 }
 
+/// A request with the claims that Edge mints for a site owner session of `user` (workspace change
+/// `add-site-owner-editing-and-live`, session kind `site_owner`).
+pub(crate) fn site_owner(method: Method, path: &str, user: Uuid) -> Result<Request<Body>, Failure> {
+    Ok(Request::builder()
+        .method(method)
+        .uri(path)
+        .header("x-ratatoskr-user-id", user.to_string())
+        .header("x-ratatoskr-session-kind", "site_owner")
+        .header("x-correlation-id", "018f0000-0000-7000-8000-00000000c0c2")
+        .body(Body::empty())?)
+}
+
 /// Send `request` from `peer`.
 pub(crate) async fn call_from(
     router: &Router,
