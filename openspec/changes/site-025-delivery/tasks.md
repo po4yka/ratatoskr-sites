@@ -13,6 +13,11 @@
 - [x] 3.1 RED: add `crates/manifest/tests/validate.rs::unknown_capability_is_refused` and `services/sites/tests/manifest_projection.rs` with `submitted_manifest_alone_serves_nothing`, `sites_service_has_no_approval_route`, `withdrawal_event_stops_the_site` and `internal_manifest_route_serves_loopback_only`. Confirm that the status assertion of `withdrawal_event_stops_the_site` fails because nothing consumes the approval event.
 - [x] 3.2 GREEN: implement manifest submission and storage by digest, `GET /v1/sites`, `GET` and `PUT .../manifest`, `GET .../releases`, the internal manifest route, the read projection that consumes `ratatoskr_sites_approvals`, and the in-memory set of servable sites. Verify 3.1.
 
+## 3a. The publication routes (the management routes that the web client reads; no workspace task names them)
+
+- [x] 3.3 RED: add `services/sites/tests/publications.rs` with `owner_writes_reads_and_removes_a_publication` and `invalid_publication_is_refused`, against `GET .../publications` and `GET`, `PUT`, `DELETE .../publications/{publication}`. Confirm that the status assertion of the first fails with 404 because the routes do not exist.
+- [ ] 3.4 GREEN: implement the four publication routes with the body `{connection_id, mode, release_mode, included_folders, excluded_folders, included_tags, frontmatter_allow}`. Verify 3.3.
+
 ## 4. The effective set (workspace tasks 5.28, 5.29)
 
 - [ ] 4.1 RED: add `services/sites/tests/effective_set.rs` with `added_capability_waits_for_approval`, `removed_capability_stops_without_approval`, `new_hostname_and_publication_wait_for_approval` and `unrequested_public_capability_is_not_found`. Confirm that the status assertion of the first fails because the active manifest is served without approval.
