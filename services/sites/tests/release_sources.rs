@@ -60,3 +60,51 @@ async fn sources_hold_nothing_of_an_unselected_file() -> Outcome {
     }
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn every_source_row_names_its_publications() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let built = fixture.builder().build(&request(None)).await?;
+    let unnamed: i64 = sqlx::query_scalar(
+        "select count(*) from sites.release_sources where cardinality(publication_ids) = 0",
+    )
+    .fetch_one(fixture.database.pool())
+    .await?;
+    assert_eq!(
+        unnamed, 0,
+        "every note and attachment names its publications"
+    );
+
+    let inserted = sqlx::query(
+        "insert into sites.release_sources (release_id, connection_id, path, file, \
+         publication_ids) values ($1, $2, 'stray.md', '{}'::jsonb, '{}')",
+    )
+    .bind(&built.release_id)
+    .bind(fixture.index.connection())
+    .execute(fixture.database.pool())
+    .await;
+    assert!(
+        inserted.is_err(),
+        "the schema refuses a source row without publications"
+    );
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn stored_frontmatter_holds_no_publish() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set frontmatter_allow = '{publish}'")
+        .execute(fixture.database.pool())
+        .await?;
+    fixture.builder().build(&request(None)).await?;
+    let with_publish: i64 = sqlx::query_scalar(
+        "select count(*) from sites.release_sources where file -> 'frontmatter' ? 'publish'",
+    )
+    .fetch_one(fixture.database.pool())
+    .await?;
+    assert_eq!(
+        with_publish, 0,
+        "the stored frontmatter holds no publish value, also when the allowlist names it"
+    );
+    fixture.cleanup().await
+}
