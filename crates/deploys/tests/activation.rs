@@ -167,3 +167,47 @@ async fn activating_previous_needs_no_download() -> Outcome {
     );
     store.cleanup().await
 }
+
+#[tokio::test]
+async fn retention_keeps_current_and_previous() -> Outcome {
+    let store = Store::new(5).await?;
+    let commits: Vec<String> = ('1'..='6').map(commit).collect();
+    let [first, .., sixth] = commits.as_slice() else {
+        return Err("six commits".into());
+    };
+    deploy(&store, first).await?;
+    assert_eq!(activate(&store, first).await?, Ok((first.clone(), None)));
+    for later in commits.iter().skip(1) {
+        // Each deploy is stored later than the one before it.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        deploy(&store, later).await?;
+    }
+    assert_eq!(
+        activate(&store, sixth).await?,
+        Ok((sixth.clone(), Some(first.clone())))
+    );
+
+    let mut kept: Vec<String> =
+        std::fs::read_dir(store.deploys.site_dir(&Store::site()?).join("bundles"))?
+            .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+            .collect::<Result<_, _>>()?;
+    kept.sort();
+    let expected: Vec<String> = commits
+        .iter()
+        .filter(|commit| commit.as_str() != commit_two())
+        .cloned()
+        .collect();
+    assert_eq!(
+        kept, expected,
+        "the oldest deploy that is neither current nor previous is removed, and five remain"
+    );
+    assert_eq!(link(&store, "current")?, Some(sixth.clone()));
+    assert_eq!(link(&store, "previous")?, Some(first.clone()));
+    store.cleanup().await
+}
+
+/// The second deploy of `retention_keeps_current_and_previous`: the oldest one that is neither
+/// current nor previous.
+fn commit_two() -> String {
+    commit('2')
+}
