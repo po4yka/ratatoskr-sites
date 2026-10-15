@@ -4,6 +4,7 @@
 
 mod support;
 
+use ratatoskr_sites::release_build::BuildFailure;
 use ratatoskr_sites_contracts::Release;
 use ratatoskr_sites_release::sha256_hex;
 use serde_json::Value;
@@ -158,11 +159,7 @@ async fn blob_over_the_bound_fails_with_blob_length() -> Outcome {
 
     let built = fixture.builder().build(&request(None)).await;
     assert_eq!(
-        built
-            .as_ref()
-            .map_err(ratatoskr_sites::release_build::BuildFailure::class)
-            .err()
-            .as_deref(),
+        built.as_ref().map_err(BuildFailure::class).err().as_deref(),
         Some("sites.blob_length"),
         "a blob of more than 64 MiB fails the build before it is read: {:?}",
         built.map(|outcome| outcome.release_id)
@@ -171,6 +168,64 @@ async fn blob_over_the_bound_fails_with_blob_length() -> Outcome {
         fixture.release_count().await?,
         0,
         "the build makes no release"
+    );
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn long_failure_detail_is_still_reported() -> Outcome {
+    let fixture = Fixture::new().await?;
+    // Two notes whose slugs collide, with paths so long that the detail of the failure is longer
+    // than a SafeMessage may be.
+    let folder = "Long".repeat(150);
+    fixture.add_note(&format!("{folder}/A B.md"), "One.\n")?;
+    fixture.add_note(&format!("{}/a-b.md", folder.to_lowercase()), "Two.\n")?;
+    let operation = Uuid::now_v7();
+
+    let built = fixture.builder().build(&request(Some(operation))).await;
+    assert_eq!(
+        built.as_ref().map_err(BuildFailure::class).err().as_deref(),
+        Some("sites.slug_collision")
+    );
+    let reports = fixture.reports().await?;
+    assert_eq!(reports.len(), 1, "the failure is reported once");
+    let report = reports.first().ok_or("a report")?;
+    assert_eq!(report.get("status"), Some(&Value::from("failed")));
+    assert_eq!(
+        report.pointer("/error/code"),
+        Some(&Value::from("sites.slug_collision")),
+        "{report}"
+    );
+    let message = report
+        .pointer("/error/message")
+        .and_then(Value::as_str)
+        .ok_or("the report has a message")?;
+    assert!(
+        (1..=1024).contains(&message.chars().count()),
+        "the message is a safe message: {} characters",
+        message.chars().count()
+    );
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn report_failure_keeps_the_build_error() -> Outcome {
+    let fixture = Fixture::new().await?;
+    fixture.add_note("Notes/A B.md", "One.\n")?;
+    fixture.add_note("notes/a-b.md", "Two.\n")?;
+    // The outbox cannot take the report.
+    sqlx::query("alter table sites.outbox rename to outbox_gone")
+        .execute(fixture.database.pool())
+        .await?;
+
+    let built = fixture
+        .builder()
+        .build(&request(Some(Uuid::now_v7())))
+        .await;
+    assert_eq!(
+        built.as_ref().map_err(BuildFailure::class).err().as_deref(),
+        Some("sites.slug_collision"),
+        "a report that cannot be written does not replace the error of the build"
     );
     fixture.cleanup().await
 }

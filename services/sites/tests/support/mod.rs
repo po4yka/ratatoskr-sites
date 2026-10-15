@@ -171,6 +171,41 @@ impl Fixture {
         )
     }
 
+    /// Add the note `path` with the text `text` to the connection.
+    pub(crate) fn add_note(&self, path: &str, text: &str) -> Result<(), Failure> {
+        let revision = revision_of(text.as_bytes(), "text/markdown")?;
+        store(
+            self.notes_root.path(),
+            text.as_bytes(),
+            revision.digest.hex.as_str(),
+        )?;
+        self.index
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?
+            .push(IndexedFile {
+                path: path.to_owned(),
+                revision,
+                frontmatter: None,
+                tags: Vec::new(),
+                headings: Vec::new(),
+                blocks: Vec::new(),
+                links: Vec::new(),
+                embeds: Vec::new(),
+            });
+        Ok(())
+    }
+
+    /// The payloads of the operation reports in the outbox.
+    pub(crate) async fn reports(&self) -> Result<Vec<serde_json::Value>, Failure> {
+        Ok(sqlx::query_scalar(
+            "select payload -> 'payload' from sites.outbox \
+             where subject = 'evt.platform.operation.reported.v1' order by position",
+        )
+        .fetch_all(self.database.pool())
+        .await?)
+    }
+
     pub(crate) async fn release_count(&self) -> Result<i64, Failure> {
         Ok(
             sqlx::query_scalar("select count(*) from sites.releases where site_id = $1")
