@@ -118,3 +118,9 @@ its current configuration still selects it: a build from the release can only sh
 - [x] 16.4 GREEN (5.84): store with a note only the frontmatter keys that its page rendered (and `slug`), so a build from the release renders only those that the current allowlist still allows. Verify 16.3.
 - [x] 16.5 RED (5.85): add `release_provenance.rs::selection_inputs_come_from_the_stored_revision`: a manual publication that reads an old revision does not keep a note on the `publish` value of the newer revision that an automatic publication read. Confirm that the publication assertion fails because `names_site` comes from the last selecting publication.
 - [x] 16.6 GREEN (5.86): compute `names_site` and `selection_tags` from the revision that the row stores. Verify 16.5.
+
+## 17. Eighth review (workspace tasks 5.87 to 5.89)
+
+- [x] 17.1 RED (5.87): add `release_provenance.rs::publication_of_another_revision_does_not_keep_a_new_key`: an automatic publication that sorts first renders a new revision with a field; the manual publication that reads the released revision does not join the row, and after `DELETE` of the automatic one its field is not shown. Confirm that the publication assertion fails because every selecting publication joins the row.
+- [ ] 17.2 GREEN (5.88): add a publication to the publications of a source row and of its page only when its own file has the stored revision. Verify 17.1.
+- [ ] 17.3 (5.89) Refactor: read the current release again after the lock, clear the publications of every asset of a release before they are written again, and correct the comments of the projection and of `release_sources.file`. No test: it changes no observable behaviour that the suite does not already cover.

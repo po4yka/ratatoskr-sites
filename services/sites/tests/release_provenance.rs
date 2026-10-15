@@ -331,3 +331,58 @@ async fn selection_inputs_come_from_the_stored_revision() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn publication_of_another_revision_does_not_keep_a_new_key() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set release_mode = 'manual', frontmatter_allow = '{k}'")
+        .execute(fixture.database.pool())
+        .await?;
+    fixture.add_note("shared/n.md", "A shared note.\n")?;
+    publication(&fixture, "pub-a", &["shared"]).await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'automatic', frontmatter_allow = '{k}' \
+         where publication_id = 'pub-a'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-a"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    let (bus, running, api) = started(&fixture).await?;
+
+    // A second revision with the field k. The automatic pub-a reads it and, its id coming
+    // first, renders it; the manual pub-r reads the first revision from the release.
+    fixture.remove("shared/n.md")?;
+    fixture.add_indexed(
+        json!({ "path": "shared/n.md", "frontmatter": { "k": "hush" } }),
+        "---\nk: hush\n---\nA shared note.\n",
+    )?;
+    sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at) values ($1, $2, 'file_change', null, now())",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(SITE)
+    .execute(fixture.database.pool())
+    .await?;
+    running.shared.servable.wake(SITE);
+    built(&fixture).await?;
+    assert_eq!(
+        publications_of(&fixture, "shared/n.md").await?,
+        vec![vec!["pub-a".to_owned()]],
+        "only the publication that read the stored revision publishes the note"
+    );
+
+    delete(&api, &fixture, "pub-a").await?;
+    built(&fixture).await?;
+    let after = page(&api, "shared/n").await?;
+    assert!(
+        !String::from_utf8_lossy(&after.body).contains("hush"),
+        "pub-r alone never shows the key of a revision that it did not release"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
