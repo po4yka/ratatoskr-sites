@@ -81,12 +81,35 @@ pub(crate) fn receive(
     write_new(&staging.path.join(MANIFEST), &manifest_bytes)?;
     let bundles = site_dir.join(BUNDLES);
     std::fs::create_dir_all(&bundles).map_err(DeployError::Storage)?;
-    std::fs::rename(&staging.path, bundles.join(manifest.commit.as_str()))
-        .map_err(DeployError::Storage)?;
+    let target = bundles.join(manifest.commit.as_str());
+    // A deploy is idempotent on the site and the commit: a stored deploy of the commit is the
+    // answer, and the staging directory is removed.
+    if target.exists() {
+        return stored(&target);
+    }
+    if let Err(error) = std::fs::rename(&staging.path, &target) {
+        // Another receipt of the same commit renamed its copy first.
+        return if target.exists() {
+            stored(&target)
+        } else {
+            Err(DeployError::Storage(error))
+        };
+    }
     staging.kept = true;
     Ok(Stored {
         manifest,
         created: true,
+    })
+}
+
+/// The deploy that is stored at `target`.
+pub(crate) fn stored(target: &Path) -> Result<Stored, DeployError> {
+    let bytes = std::fs::read(target.join(MANIFEST)).map_err(DeployError::Storage)?;
+    let manifest: BundleManifest = serde_json::from_slice(&bytes)
+        .map_err(|error| DeployError::Storage(std::io::Error::other(error)))?;
+    Ok(Stored {
+        manifest,
+        created: false,
     })
 }
 
