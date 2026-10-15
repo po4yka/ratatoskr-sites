@@ -194,12 +194,12 @@ impl DeployStore {
         let _one_at_a_time = self.activations.lock().await;
         let site_dir = self.site_dir(site);
         let wanted = commit.as_str().to_owned();
-        let previous =
-            tokio::task::spawn_blocking(move || activation::activate(&site_dir, &wanted))
-                .await
-                .map_err(|_| {
-                    DeployError::Storage(std::io::Error::other("the activation stopped"))
-                })??;
+        let retention = self.limits.retention;
+        let previous = tokio::task::spawn_blocking(move || {
+            activation::activate(&site_dir, &wanted, retention)
+        })
+        .await
+        .map_err(|_| DeployError::Storage(std::io::Error::other("the activation stopped")))??;
         let previous_commit = previous
             .as_deref()
             .map(CommitSha::parse)

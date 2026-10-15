@@ -19,8 +19,12 @@ pub(crate) const CURRENT: &str = "current";
 pub(crate) const PREVIOUS: &str = "previous";
 
 /// Make the deploy of `commit` current in `site_dir`, and give back the commit that was current
-/// before it, if any.
-pub(crate) fn activate(site_dir: &Path, commit: &str) -> Result<Option<String>, DeployError> {
+/// before it, if any. Then keep at most `retention` deploys ([`retain`]).
+pub(crate) fn activate(
+    site_dir: &Path,
+    commit: &str,
+    retention: usize,
+) -> Result<Option<String>, DeployError> {
     let target = PathBuf::from(BUNDLES).join(commit);
     if !site_dir.join(&target).join(MANIFEST).is_file() {
         return Err(DeployError::DeployNotFound);
@@ -33,7 +37,38 @@ pub(crate) fn activate(site_dir: &Path, commit: &str) -> Result<Option<String>, 
     if let Some(before) = &before {
         switch(site_dir, PREVIOUS, &PathBuf::from(BUNDLES).join(before))?;
     }
+    retain(site_dir, retention)?;
     Ok(before)
+}
+
+/// Keep the current deploy, the previous deploy and the newest others up to `retention` deploys in
+/// all, by the time each deploy directory was stored, and remove the rest.
+fn retain(site_dir: &Path, retention: usize) -> Result<(), DeployError> {
+    let linked: Vec<String> = [CURRENT, PREVIOUS]
+        .iter()
+        .filter_map(|name| linked(site_dir, name))
+        .collect();
+    let mut others = Vec::new();
+    for entry in std::fs::read_dir(site_dir.join(BUNDLES)).map_err(DeployError::Storage)? {
+        let entry = entry.map_err(DeployError::Storage)?;
+        let commit = entry.file_name().to_string_lossy().into_owned();
+        if linked.contains(&commit) {
+            continue;
+        }
+        let stored_at = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map_err(DeployError::Storage)?;
+        others.push((stored_at, commit, entry.path()));
+    }
+    // The newest first; one time breaks ties by the commit, so the order is stable.
+    others.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+    let room = retention.saturating_sub(linked.len());
+    for (_, commit, path) in others.into_iter().skip(room) {
+        tracing::info!(commit, "a deploy beyond the retention count is removed");
+        std::fs::remove_dir_all(path).map_err(DeployError::Storage)?;
+    }
+    Ok(())
 }
 
 /// The commit that the link `name` of `site_dir` names, if the link exists.
