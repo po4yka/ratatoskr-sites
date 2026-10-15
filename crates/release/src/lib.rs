@@ -51,6 +51,14 @@ const BUILDER_FIELDS: [&str; 2] = ["publish", "slug"];
 /// The class of a selected note whose text the caller did not give.
 pub const NOTE_UNAVAILABLE: &str = "sites.note_unavailable";
 
+/// The class of a page whose HTML body is over [`MAX_PAGE_HTML_BYTES`].
+pub const PAGE_TOO_LARGE: &str = "sites.page_too_large";
+
+/// The largest HTML body of a page, 1 MiB, before the allowlist reads it. The tokenizer has
+/// steps whose work grows faster than the input (for example the check of duplicate attributes),
+/// so a larger body fails the build instead.
+pub const MAX_PAGE_HTML_BYTES: usize = 1024 * 1024;
+
 /// The class of a page that does not satisfy its contract.
 pub const PAGE_INVALID: &str = "sites.page_invalid";
 
@@ -220,6 +228,13 @@ fn render_note(
         })
         .collect();
     let blobs = used.into_values().collect();
+    let html = render::to_html(&tree);
+    if html.len() > MAX_PAGE_HTML_BYTES {
+        return Err(BuildError {
+            class: PAGE_TOO_LARGE,
+            detail: format!("{} renders more than 1 MiB of HTML", note.file.path),
+        });
+    }
     Ok(Rendered {
         slug: slug.clone(),
         title: title_of(note.file)?,
@@ -228,7 +243,7 @@ fn render_note(
             node_type: PageRootType::Root,
             children: render::to_ast(&tree),
         },
-        html: sanitise::sanitise(&render::to_html(&tree)),
+        html: sanitise::sanitise(&html),
         links,
         assets,
         blobs,

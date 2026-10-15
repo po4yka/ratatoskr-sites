@@ -97,6 +97,10 @@ const ATTRIBUTES: [(&str, &[&str]); 14] = [
     ("h6", &["id"]),
 ];
 
+/// The most elements that may be open at once. A deeper start tag is dropped and its text stays,
+/// so the work of an end tag, which looks for its element among the open ones, has a bound.
+pub const MAX_DEPTH: usize = 256;
+
 /// The attributes whose value is a URL.
 const URL_ATTRIBUTES: [&str; 2] = ["href", "src"];
 
@@ -183,6 +187,9 @@ impl State {
     }
 
     fn start(&mut self, name: &str, tag: &Tag) {
+        if !VOID.contains(&name) && self.open.len() >= MAX_DEPTH {
+            return;
+        }
         if name == "input" && attribute(tag, "type").as_deref() != Some("checkbox") {
             return;
         }
