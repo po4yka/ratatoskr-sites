@@ -321,16 +321,15 @@ async fn selection_inputs_come_from_the_stored_revision() -> Outcome {
     )
     .await?;
     built(&fixture).await?;
-    // Since 5.88 pub-z, which read another revision, does not publish the row either; the point
-    // here is that pub-r drops the note.
-    let publications = publications_of(&fixture, "shared/n.md").await?;
-    assert!(
-        !publications
-            .iter()
-            .flatten()
-            .any(|publication| publication == "pub-r"),
-        "the selection inputs come from the revision that the row stores: {publications:?}"
+    // Since 5.88 pub-z, which read another revision, does not publish the row either: pub-r
+    // drops the note, and the note leaves the release until a build reads pub-z from the notes
+    // index.
+    assert_eq!(
+        publications_of(&fixture, "shared/n.md").await?,
+        Vec::<Vec<String>>::new(),
+        "the selection inputs come from the revision that the row stores"
     );
+    assert_eq!(page(&api, "shared/n").await?.status, StatusCode::NOT_FOUND);
 
     running.stop().await;
     bus.cleanup().await?;

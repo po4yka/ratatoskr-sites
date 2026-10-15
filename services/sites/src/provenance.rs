@@ -24,8 +24,9 @@ struct Source {
     file: IndexedFile,
     /// The frontmatter keys that the page of the note rendered in this release.
     keys: BTreeSet<String>,
-    /// The publications that publish the file: for a note those that select it, for an attachment
-    /// those that select a note that uses it and do not exclude it.
+    /// The publications that publish the file with the stored revision: for a note those that
+    /// select it at that revision, for an attachment those that select a note that uses it, have it
+    /// at that revision among their own files, and may publish it.
     publications: BTreeSet<String>,
     /// Whether the `publish` value of the note names the site: `true`, the site id, or a list
     /// with the site id.

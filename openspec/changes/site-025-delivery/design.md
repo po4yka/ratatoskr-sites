@@ -208,3 +208,14 @@ makes an ordinary build, because the command or the automatic mode releases new 
   the revision that the row stores. When a manual publication reads an older revision from the
   release and an automatic one reads a newer one, only the publication whose id comes first, and
   whose revision the page renders, publishes the note in that release.
+- An automatic publication that did not join a note row (it read another revision than the one
+  that the row stores) loses the note in a removal build, until the next build that reads it from
+  the notes index.
+- Known limit: when two publications read two revisions of one attachment path, an attachment
+  source is kept only for the revision that the rendered page uses and that a publication has
+  among its own files; any other revision gets no source and is not served. This fails closed.
+- A build that finds its release current and, under the lock of the current-release row, finds
+  another release current, writes, switches and announces nothing (workspace task 5.93).
+- On a rewrite the publications of every asset of the release are cleared before those of this
+  build are set: a guard, because each asset of a page comes from an attachment that the page
+  resolved, so no build makes an asset without a source.
