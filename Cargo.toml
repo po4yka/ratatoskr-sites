@@ -47,6 +47,13 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 tokio = { version = "1.46", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync", "fs", "io-util"] }
 axum  = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"] }
 
+# ---- paths ----
+# The path key of ratatoskr-notes: NFC, then Unicode default case folding. A publication compares
+# folders with it, so `Private` excludes `private/x.md` as it does in notes. The versions of
+# ratatoskr-notes.
+unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
+caseless = "0.2.2"
+
 # ---- the release builder ----
 # CommonMark with tables, strikethrough, task lists and wikilinks, the version of ratatoskr-notes.
 # The release builder parses each selected note into one tree, and the privacy filter runs on it.

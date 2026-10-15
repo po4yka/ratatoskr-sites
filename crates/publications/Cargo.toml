@@ -10,9 +10,11 @@ repository.workspace   = true
 [dependencies]
 ratatoskr-identifiers.workspace     = true
 ratatoskr-sites-contracts.workspace = true
+caseless.workspace                  = true
 serde.workspace                     = true
 serde_json.workspace                = true
 thiserror.workspace                 = true
+unicode-normalization.workspace     = true
 sha2                                = { workspace = true, optional = true }
 
 [features]

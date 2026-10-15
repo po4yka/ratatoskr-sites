@@ -6,6 +6,7 @@ use ratatoskr_sites_contracts::{PublicationId, SiteId};
 use serde_json::Value;
 
 use crate::index::IndexedFile;
+use crate::paths::in_folder;
 
 /// Which files a publication takes when no other rule decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,15 +104,6 @@ fn flag(publication: &Publication, file: &IndexedFile) -> Flag {
         }
         Some(_) => Flag::Excludes,
     }
-}
-
-/// Whether `path` is in `folder` or one of its subfolders. A trailing `/` of the folder is ignored.
-fn in_folder(path: &str, folder: &str) -> bool {
-    let folder = folder.trim_end_matches('/');
-    !folder.is_empty()
-        && path
-            .strip_prefix(folder)
-            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Whether the note tag `tag` (with its `#`) is an included tag of the publication. Tags compare

@@ -24,7 +24,9 @@ use ratatoskr_sites_contracts::{
     AssetRef, FrontmatterKey, NavigationEntry, Page, PageRoot, PageRootType, PageTitle,
     PublicationId, Release, ReleaseAsset, ReleasePage, SiteId, Slug,
 };
-use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, assign_slugs, select};
+use ratatoskr_sites_publications::{
+    BuildError, IndexedFile, Publication, assign_slugs, in_folder, select,
+};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
@@ -241,14 +243,6 @@ fn publishable_attachments(
         })
         .map(|file| (file.path.clone(), file.revision.clone()))
         .collect()
-}
-
-fn in_folder(path: &str, folder: &str) -> bool {
-    let folder = folder.trim_end_matches('/');
-    !folder.is_empty()
-        && path
-            .strip_prefix(folder)
-            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// The slugs that the filtered tree links to or embeds, and the assets that it embeds.
