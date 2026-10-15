@@ -10,7 +10,7 @@
 //! - text, escaped again.
 //!
 //! An element of [`REMOVED_WITH_CONTENT`] is removed with everything in it; any other element
-//! outside the allowlist loses its tags and keeps its text. Comments and doctypes are removed. A URL
+//! outside the allowlist, `embed` among them, loses its tags and keeps its text. Comments and doctypes are removed. A URL
 //! attribute keeps only an `https`, `http` or `mailto` URL or a relative reference; a browser
 //! removes tabs and line breaks from a URL, so the check does too. An `input` stays only as a task
 //! list box.
@@ -74,8 +74,8 @@ const ELEMENTS: [&str; 43] = [
 const VOID: [&str; 4] = ["br", "hr", "img", "input"];
 
 /// The elements that are removed with their content, not only with their tags.
-const REMOVED_WITH_CONTENT: [&str; 16] = [
-    "script", "style", "iframe", "object", "embed", "template", "noscript", "noembed", "noframes",
+const REMOVED_WITH_CONTENT: [&str; 15] = [
+    "script", "style", "iframe", "object", "template", "noscript", "noembed", "noframes",
     "textarea", "title", "xmp", "select", "svg", "math", "form",
 ];
 
@@ -164,7 +164,9 @@ impl State {
             return TokenSinkResult::Continue;
         }
         if REMOVED_WITH_CONTENT.contains(&name) {
-            if tag.kind == TagKind::StartTag && !tag.self_closing {
+            // A browser ignores the self-closing flag of these elements, so `<script/>` starts
+            // content too.
+            if tag.kind == TagKind::StartTag {
                 self.skipping = Some((name.to_owned(), 1));
                 return raw_kind(name);
             }
@@ -205,7 +207,9 @@ impl State {
             self.out.push('"');
         }
         self.out.push('>');
-        if !VOID.contains(&name) && !tag.self_closing {
+        // A browser ignores the self-closing flag of a non-void element: `<div/>` opens a div. So
+        // every non-void start tag opens, and the writer closes it.
+        if !VOID.contains(&name) {
             self.open.push(name.to_owned());
         }
     }
