@@ -65,6 +65,32 @@ impl BuildQueue {
     }
 }
 
+/// Request a build of `site_id` because a publication left its effective set or changed (workspace
+/// spec `site-manifest`, "a removal stops at once"): the links, backlinks and titles of the removed
+/// pages leave the pages that stay. It is written only for a site with a current release, in each
+/// release mode, and at most one waits at a time. A removal build reads only the publications of
+/// the current release that stay in the effective set. Returns whether a request was written.
+///
+/// # Errors
+///
+/// The query error.
+pub(crate) async fn request_removal_build(
+    database: &Database,
+    site_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let written = sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at) select $1, site_id, 'removal', null, now() from sites.current_releases \
+         where site_id = $2 and not exists (select 1 from sites.build_requests \
+         where site_id = $2 and origin = 'removal')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(site_id)
+    .execute(database.pool())
+    .await?;
+    Ok(written.rows_affected() > 0)
+}
+
 /// The worker that builds the requested sites.
 #[derive(Debug)]
 pub struct BuildWorker<B> {

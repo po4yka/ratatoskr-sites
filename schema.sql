@@ -92,7 +92,7 @@ create index publications_by_connection on sites.publications (connection_id);
 create table sites.build_requests (
     request_id    uuid        primary key,
     site_id       text        not null references sites.sites (site_id) on delete cascade,
-    origin        text        not null check (origin in ('command', 'file_change')),
+    origin        text        not null check (origin in ('command', 'file_change', 'removal')),
     operation_id  uuid,
     requested_at  timestamptz not null,
     -- The builds of this request that failed for a transient reason; the worker tries at most

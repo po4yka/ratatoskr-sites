@@ -3,13 +3,14 @@
 //! the effective set take the same path and cost no database query.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use ratatoskr_sites_contracts::SiteCapability;
 use ratatoskr_sites_persistence::Database;
 use tokio::sync::Notify;
 
 use crate::effective::effective_set;
+use crate::worker::{BuildQueue, request_removal_build};
 
 /// What a servable site serves now.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,8 @@ pub struct Servable {
     /// Held across the read and the write of each refresh, so a refresh that read the database
     /// earlier cannot write after one that read it later.
     refreshing: tokio::sync::Mutex<()>,
+    /// The build worker, woken for a removal build.
+    queue: OnceLock<BuildQueue>,
     pause: Mutex<Option<RefreshPause>>,
 }
 
@@ -69,6 +72,19 @@ impl Servable {
             servable.refresh(database, &site_id).await?;
         }
         Ok(servable)
+    }
+
+    /// Wake `queue` for a removal build when a refresh finds that publications left the effective
+    /// set of a site.
+    pub fn attach(&self, queue: BuildQueue) {
+        let _ = self.queue.set(queue);
+    }
+
+    /// Wake the build worker for `site_id`, when one is attached.
+    pub fn wake(&self, site_id: &str) {
+        if let Some(queue) = self.queue.get() {
+            queue.wake(site_id);
+        }
     }
 
     /// Stop the next refresh between its read and its write. For tests.
@@ -116,6 +132,19 @@ impl Servable {
         if let Some(pause) = pause {
             pause.reached.notify_one();
             pause.release.notified().await;
+        }
+        let shrunk = self.sites.read().ok().is_some_and(|sites| {
+            sites.get(site_id).is_some_and(|before| {
+                serving.as_ref().is_some_and(|now| {
+                    before
+                        .publications
+                        .iter()
+                        .any(|publication| !now.publications.contains(publication))
+                })
+            })
+        });
+        if shrunk && request_removal_build(database, site_id).await? {
+            self.wake(site_id);
         }
         if let Ok(mut sites) = self.sites.write() {
             match serving {

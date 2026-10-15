@@ -64,6 +64,7 @@ pub fn start<I: NotesIndex + 'static, B: SiteBuilds>(
     stop: &CancellationToken,
 ) -> Vec<JoinHandle<()>> {
     let (queue, worker) = build_queue(shared.clone(), builds);
+    shared.servable.attach(queue.clone());
     let triggers = Arc::new(Triggers::new(shared.clone(), index, queue));
     let mut tasks = consumer::spawn(
         consumers.target,

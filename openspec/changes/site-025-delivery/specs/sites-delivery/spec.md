@@ -40,3 +40,20 @@ that a shared cache does not keep it after the site becomes servable.
 
 - **WHEN** a client requests the release route of a missing, an unapproved and a withdrawn site, and the search route of a site that does not request `search.publication`
 - **THEN** each answer is 404 `sites.site_not_found` with `Cache-Control: no-store` and the same body, verified by `services/sites/tests/delivery.rs::every_kind_of_absence_is_the_same_answer`
+
+### Requirement: A removal requests a build in each release mode
+
+When a publication leaves the effective set of a site that has a current release, or a released
+publication is changed or deleted, the sites service SHALL write a build request of the origin
+`removal`, in each release mode. A removal build SHALL read only the publications of the current
+release that stay in the effective set.
+
+#### Scenario: A deleted or changed publication
+
+- **WHEN** the owner deletes a publication or changes a released one
+- **THEN** a build request of the origin `removal` exists, verified by `services/sites/tests/removal_build.rs::deleted_and_narrowed_publications_request_a_build`
+
+#### Scenario: A manual site loses a publication
+
+- **WHEN** the owner removes a publication from the manifest of a site whose publications are in the release mode `manual`
+- **THEN** a build runs, and the new release holds no slug or title of the removed publication in the pages that stay, verified by `services/sites/tests/removal_build.rs::removed_publication_is_built_out_of_the_kept_pages`

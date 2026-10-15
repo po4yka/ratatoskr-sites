@@ -14,6 +14,7 @@ use uuid::Uuid;
 use super::ApiState;
 use super::fault::Fault;
 use super::manage::MAX_LISTED;
+use crate::worker::request_removal_build;
 
 /// The most items of one list of a publication.
 const MAX_ITEMS: usize = 64;
@@ -176,6 +177,14 @@ pub(crate) async fn write(
     if !body.is_valid() {
         return Err(Fault::Invalid);
     }
+    let existed: bool = sqlx::query_scalar(
+        "select exists (select 1 from sites.publications where site_id = $1 \
+         and publication_id = $2)",
+    )
+    .bind(&site)
+    .bind(publication.as_str())
+    .fetch_one(state.database.pool())
+    .await?;
     let written: Option<Row> = sqlx::query_as(&format!(
         "insert into sites.publications (site_id, publication_id, connection_id, mode, \
          release_mode, state, included_folders, excluded_folders, included_tags, \
@@ -207,8 +216,20 @@ pub(crate) async fn write(
     .fetch_optional(state.database.pool())
     .await?;
     let written = written.ok_or(Fault::SiteNotFound)?;
+    if existed {
+        // A changed publication can select fewer notes: build their links out of the kept pages.
+        removal_build(&state, &site).await?;
+    }
     state.servable.refresh(&state.database, &site).await?;
     Ok(Json(PublicationView::from(written)))
+}
+
+/// Request a removal build of `site` and wake the worker.
+async fn removal_build(state: &ApiState, site: &str) -> Result<(), Fault> {
+    if request_removal_build(&state.database, site).await? {
+        state.servable.wake(site);
+    }
+    Ok(())
 }
 
 /// `DELETE /v1/sites/{site}/publications/{publication}`: 204, or 404
@@ -227,7 +248,9 @@ pub(crate) async fn remove(
     if removed.rows_affected() == 0 {
         return Err(Fault::PublicationNotFound);
     }
-    // The publication leaves the effective set at once, and with it its pages and assets.
+    // The publication leaves the effective set at once, and with it its pages and assets; a build
+    // removes its links from the kept pages.
+    removal_build(&state, &site).await?;
     state.servable.refresh(&state.database, &site).await?;
     Ok(StatusCode::NO_CONTENT)
 }
