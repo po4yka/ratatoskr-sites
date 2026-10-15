@@ -44,7 +44,10 @@ pub async fn current_release(
     .map_err(ReadFailure::Database)
 }
 
-/// The page `slug` of `site_id`, as the reader of the release `release_id` asks for it.
+/// The page `slug` of `site_id` in the release `release_id`, the release whose document the reader
+/// fetched. The page is given only while that release is the current release of the site, so a
+/// reader never gets a page of another release than the one it fetched; after a switch the answer
+/// is not found (workspace spec `site-publications`, "A release becomes current atomically").
 ///
 /// # Errors
 ///
@@ -56,23 +59,25 @@ pub async fn page(
     release_id: &str,
     slug: &str,
 ) -> Result<Option<PageRead>, ReadFailure> {
-    let _ = release_id;
-    let row: Option<(String, String)> = sqlx::query_as(
-        "select p.release_id, p.page_digest from sites.release_pages p \
-         join sites.releases r on r.release_id = p.release_id \
-         where r.site_id = $1 and p.slug = $2 order by r.built_at desc limit 1",
+    let digest: Option<String> = sqlx::query_scalar(
+        "select p.page_digest from sites.current_releases c \
+         join sites.release_pages p on p.release_id = c.release_id \
+         where c.site_id = $1 and c.release_id = $2 and p.slug = $3",
     )
     .bind(site_id)
+    .bind(release_id)
     .bind(slug)
     .fetch_optional(database.pool())
     .await
     .map_err(ReadFailure::Database)?;
-    let Some((release_id, digest)) = row else {
+    let Some(path) = digest.as_deref().and_then(|digest| blobs.path(digest)) else {
         return Ok(None);
     };
-    let Some(path) = blobs.path(&digest) else {
-        return Ok(None);
-    };
+    // A stored page never changes, so the bytes are the page of `release_id` also when a newer
+    // release became current after the query.
     let bytes = tokio::fs::read(path).await.map_err(ReadFailure::Blob)?;
-    Ok(Some(PageRead { release_id, bytes }))
+    Ok(Some(PageRead {
+        release_id: release_id.to_owned(),
+        bytes,
+    }))
 }

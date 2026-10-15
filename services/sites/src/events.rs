@@ -8,6 +8,7 @@ use ratatoskr_identifiers::{
 use ratatoskr_operation_contracts::{
     OperationReported, OperationResultKind, OperationResultRef, OperationStatus,
 };
+use ratatoskr_sites_contracts::{Release, ReleasePublished};
 use uuid::Uuid;
 
 /// The producer name on every envelope of this service.
@@ -15,6 +16,9 @@ pub const PRODUCER: &str = "ratatoskr-sites";
 
 /// The subject of an operation report.
 pub const OPERATION_REPORTED: &str = "evt.platform.operation.reported.v1";
+
+/// The subject of the release event.
+pub const RELEASE_PUBLISHED: &str = "evt.sites.release.published.v1";
 
 /// The result kind of a build in its operation report.
 const RELEASE_RESULT: &str = "sites.release";
@@ -96,6 +100,41 @@ pub fn build_reported(
         OperationReported::event_type(),
         &operation,
         &operation,
+        owner_id,
+        &payload,
+    )
+}
+
+/// `sites.release.published.v1` for the release `release_id` of `release`, owned by `owner_id`.
+/// It carries the site id, the release id, the publication ids, the page count and the time; no
+/// title, slug, path or content (workspace spec `site-publications`).
+///
+/// # Errors
+///
+/// [`EnvelopeBuildError`] when a value does not satisfy the contract.
+pub fn release_published(
+    event_id: Uuid,
+    owner_id: Uuid,
+    release_id: &str,
+    release: &Release,
+) -> Result<EventEnvelope, EnvelopeBuildError> {
+    let payload = ReleasePublished {
+        site_id: release.site_id.clone(),
+        release_id: ratatoskr_identifiers::DigestHex::parse(release_id)
+            .map_err(|_| EnvelopeBuildError("release_id"))?,
+        publication_ids: release.publication_ids.clone(),
+        page_count: u32::try_from(release.pages.len())
+            .map_err(|_| EnvelopeBuildError("page_count"))?,
+        published_at: WireTimestamp::now(),
+    };
+    payload
+        .validate()
+        .map_err(|_| EnvelopeBuildError("payload"))?;
+    envelope(
+        event_id,
+        ReleasePublished::event_type(),
+        &format!("site:{}", release.site_id.as_str()),
+        &format!("event:{event_id}"),
         owner_id,
         &payload,
     )

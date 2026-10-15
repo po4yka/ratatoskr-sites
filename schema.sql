@@ -147,16 +147,23 @@ create table sites.current_releases (
     made_current_at  timestamptz not null
 );
 
--- The transactional outbox: `evt.sites.release.published.v1` and the operation reports.
+-- The transactional outbox: `evt.sites.release.published.v1` and the operation reports. The relay
+-- publishes the rows in the order of `position`, each on its subject, and marks a row published
+-- only after the bus acknowledged it.
 create table sites.outbox (
     event_id      uuid        primary key,
+    position      bigint      generated always as identity,
     subject       text        not null,
     payload       jsonb       not null,
     created_at    timestamptz not null,
-    published_at  timestamptz
+    published_at  timestamptz,
+
+    -- A CLOSED list: a subject that Sites does not publish cannot be inserted.
+    constraint outbox_subject_is_known
+        check (subject in ('evt.sites.release.published.v1', 'evt.platform.operation.reported.v1'))
 );
 
-create index outbox_unpublished on sites.outbox (created_at) where published_at is null;
+create index outbox_unpublished on sites.outbox (position) where published_at is null;
 
 -- The inbox: the id of every consumed bus message, so that a redelivery is applied once.
 create table sites.inbox (

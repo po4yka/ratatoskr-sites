@@ -16,6 +16,7 @@ pub mod config;
 pub mod events;
 pub mod notes_blobs;
 pub mod notes_index;
+pub mod outbox;
 pub mod release_build;
 pub mod release_read;
 pub mod sites_blobs;
@@ -33,6 +34,7 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::admin::{RuntimeState, admin_router};
 use crate::config::{LogFormat, SitesConfig, TelemetryConfig};
+use crate::outbox::OutboxRelay;
 
 /// The whole process lifecycle.
 ///
@@ -40,7 +42,9 @@ use crate::config::{LogFormat, SitesConfig, TelemetryConfig};
 /// 2. Initialise logging and the metrics recorder; on failure exit 1.
 /// 3. Connect the database and apply the schema; on failure exit 1.
 /// 4. Bind the operator and the domain listeners; on failure exit 1.
-/// 5. Serve until SIGTERM or SIGINT, then let in-flight requests finish within the grace window.
+/// 5. Start the outbox relay when `RATATOSKR__BUS__URL` is set.
+/// 6. Serve until SIGTERM or SIGINT, then let in-flight requests finish within the grace window,
+///    and stop the relay.
 pub async fn run() -> ExitCode {
     let config = match config::load() {
         Ok(config) => config,
@@ -134,6 +138,16 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     );
     let api_task = spawn_server(api, Router::new(), stop_receiver);
 
+    // The relay publishes what the outbox holds, also the events of an earlier process.
+    let relay_stop = tokio_util::sync::CancellationToken::new();
+    let relay = config.bus.url.as_ref().map(|url| {
+        let relay = OutboxRelay::new(database.clone(), url.clone(), config.bus.clone());
+        tokio::spawn(relay.run(relay_stop.clone()))
+    });
+    if relay.is_none() {
+        tracing::info!("RATATOSKR__BUS__URL is not set; the outbox is not relayed");
+    }
+
     runtime.mark_started();
     tracing::info!(
         admin = %config.admin.bind,
@@ -153,6 +167,10 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     })
     .await
     .is_ok();
+    relay_stop.cancel();
+    if let Some(relay) = relay {
+        let _ = relay.await;
+    }
     tracing::info!(graceful = drained, "the process stopped");
     database.close().await;
     Ok(())

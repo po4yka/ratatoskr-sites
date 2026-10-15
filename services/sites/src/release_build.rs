@@ -144,14 +144,14 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
-        let outcome = self.build_site(&request.site_id).await;
+        let outcome = self.build_site(&request.site_id, owner).await;
         if let Some(operation_id) = request.operation_id {
             self.report(owner, operation_id, &outcome).await?;
         }
         outcome
     }
 
-    async fn build_site(&self, site_id: &str) -> Result<BuildOutcome, BuildFailure> {
+    async fn build_site(&self, site_id: &str, owner: Uuid) -> Result<BuildOutcome, BuildFailure> {
         type Row = (
             String,
             Uuid,
@@ -201,7 +201,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         }
         let site = site_input(site_id, &rows, &indexes)?;
         let built = self.render(&site).await?;
-        self.store(site_id, &built).await
+        self.store(site_id, owner, &built).await
     }
 
     /// Read every selected note with the bound of the reader, and build the release.
@@ -222,7 +222,12 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
     }
 
     /// Store the release unless it is the current one, and make it current.
-    async fn store(&self, site_id: &str, built: &Built) -> Result<BuildOutcome, BuildFailure> {
+    async fn store(
+        &self,
+        site_id: &str,
+        owner: Uuid,
+        built: &Built,
+    ) -> Result<BuildOutcome, BuildFailure> {
         let document = serde_jcs::to_vec(&built.release).map_err(|error| {
             BuildFailure::Build(BuildError {
                 class: ratatoskr_sites_release::PAGE_INVALID,
@@ -256,24 +261,41 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Store)?;
         }
-        self.record(site_id, &release_id, &document, built)
-            .await
-            .map_err(BuildFailure::Database)?;
+        self.record(site_id, owner, &release_id, &document, built)
+            .await?;
         Ok(BuildOutcome {
             release_id,
             new_release: true,
         })
     }
 
-    /// The rows of the release, then the current-release pointer.
+    /// The rows of the release, the current-release pointer and the outbox row of
+    /// `sites.release.published.v1`, in one transaction: a reader sees the previous release or this
+    /// one, and the event exists exactly when the switch does.
     async fn record(
         &self,
         site_id: &str,
+        owner: Uuid,
         release_id: &str,
         document: &[u8],
         built: &Built,
-    ) -> Result<(), sqlx::Error> {
-        let pool = self.database.pool();
+    ) -> Result<(), BuildFailure> {
+        let event_id = Uuid::now_v7();
+        let envelope = events::release_published(event_id, owner, release_id, &built.release)
+            .map_err(|error| error.to_string())
+            .and_then(|envelope| serde_json::to_value(envelope).map_err(|error| error.to_string()))
+            .map_err(|detail| {
+                BuildFailure::Build(BuildError {
+                    class: ratatoskr_sites_release::PAGE_INVALID,
+                    detail,
+                })
+            })?;
+        let mut transaction = self
+            .database
+            .pool()
+            .begin()
+            .await
+            .map_err(BuildFailure::Database)?;
         sqlx::query(
             "insert into sites.releases (release_id, site_id, document, page_count, built_at) \
              values ($1, $2, $3, $4, now()) on conflict (release_id) do nothing",
@@ -282,8 +304,9 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .bind(site_id)
         .bind(document)
         .bind(i32::try_from(built.pages.len()).unwrap_or(i32::MAX))
-        .execute(pool)
-        .await?;
+        .execute(&mut *transaction)
+        .await
+        .map_err(BuildFailure::Database)?;
         for page in &built.release.pages {
             sqlx::query(
                 "insert into sites.release_pages (release_id, slug, title, page_digest) \
@@ -293,8 +316,9 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .bind(page.slug.as_str())
             .bind(page.title.as_str())
             .bind(page.page_sha256.as_str())
-            .execute(pool)
-            .await?;
+            .execute(&mut *transaction)
+            .await
+            .map_err(BuildFailure::Database)?;
         }
         for asset in &built.release.assets {
             sqlx::query(
@@ -305,8 +329,9 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .bind(asset.sha256.as_str())
             .bind(asset.media_type.as_str())
             .bind(i64::try_from(asset.size_bytes).unwrap_or(i64::MAX))
-            .execute(pool)
-            .await?;
+            .execute(&mut *transaction)
+            .await
+            .map_err(BuildFailure::Database)?;
         }
         sqlx::query(
             "insert into sites.current_releases (site_id, release_id, made_current_at) \
@@ -315,9 +340,20 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         )
         .bind(site_id)
         .bind(release_id)
-        .execute(pool)
-        .await?;
-        Ok(())
+        .execute(&mut *transaction)
+        .await
+        .map_err(BuildFailure::Database)?;
+        sqlx::query(
+            "insert into sites.outbox (event_id, subject, payload, created_at) \
+             values ($1, $2, $3, now())",
+        )
+        .bind(event_id)
+        .bind(events::RELEASE_PUBLISHED)
+        .bind(envelope)
+        .execute(&mut *transaction)
+        .await
+        .map_err(BuildFailure::Database)?;
+        transaction.commit().await.map_err(BuildFailure::Database)
     }
 
     /// Write the report of the operation to the outbox. A report that cannot be built is logged:
