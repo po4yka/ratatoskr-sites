@@ -20,6 +20,11 @@ use crate::notes_blobs::{NotesBlobError, NotesBlobReader};
 use crate::notes_index::NotesIndex;
 use crate::sites_blobs::SitesBlobs;
 
+/// The largest note or attachment that a build reads: 64 MiB, the default largest file that
+/// `ratatoskr-notes` indexes (`RATATOSKR__FILES__MAX_FILE_BYTES`). A larger reference fails the
+/// build with `sites.blob_length` before anything is read.
+pub const MAX_NOTE_BYTES: u64 = 64 * 1024 * 1024;
+
 /// What starts a build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildRequest {
@@ -119,14 +124,15 @@ struct PublicationRow {
 }
 
 impl<I: NotesIndex> ReleaseBuilder<I> {
-    /// A builder that reads the index from `index`, note bytes with `notes`, and writes pages and
-    /// assets under `blob_root`.
+    /// A builder that reads the index from `index`, note bytes with `notes` within
+    /// [`MAX_NOTE_BYTES`], and writes pages and assets under `blob_root`. The bound of `notes`, if
+    /// any, is replaced by [`MAX_NOTE_BYTES`].
     #[must_use]
     pub fn new(database: Database, index: I, notes: NotesBlobReader, blob_root: PathBuf) -> Self {
         Self {
             database,
             index,
-            notes,
+            notes: notes.with_max_bytes(MAX_NOTE_BYTES),
             blobs: SitesBlobs::new(blob_root),
         }
     }
