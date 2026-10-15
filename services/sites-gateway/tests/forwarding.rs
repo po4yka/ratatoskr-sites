@@ -239,3 +239,36 @@ async fn a_keep_alive_only_stream_stays_open_for_two_minutes() -> Outcome {
     );
     Ok(())
 }
+
+/// Review M1: a path with a dot segment, an empty segment, an encoded dot, slash or backslash, or a
+/// backslash never reaches Edge, so it cannot climb out of the site's own routes.
+#[tokio::test]
+async fn dot_segments_and_encoded_separators_are_not_forwarded() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = gateway(&edge)?;
+    for path in [
+        "/_r/v1/sites/site-a/content/../../site-b/content/pages",
+        "/_r/v1/sites/site-a/content/%2e%2e/deploys",
+        "/_r/v1/sites/site-a/content/%2E%2E/%2E%2E/site-b/content/pages",
+        "/_r/v1/sites/site-a/content/./pages",
+        "/_r/v1/sites/site-a/content//pages",
+        "/_r/v1/sites/site-a/content/a%2fb",
+        "/_r/v1/sites/site-a/content/a%2Fb",
+        "/_r/v1/sites/site-a/content/a%5cb",
+        "/_r/v1/sites/site-a/content/a%5Cb",
+        "/_r/v1/sites/site-a/content/a\\b",
+    ] {
+        let Ok(request) = forwarded(path) else {
+            continue;
+        };
+        let answer = send(&router, request).await?;
+        assert_eq!(
+            answer.code().as_deref(),
+            Some("sites.gateway.route_not_forwarded"),
+            "{path}"
+        );
+        assert_eq!(answer.status, 404, "{path}");
+    }
+    assert_eq!(edge.seen().len(), 0, "the stub Edge receives no request");
+    Ok(())
+}

@@ -43,3 +43,25 @@ domain API (SITE-026 group 8), so the service needs the routes that call the sto
 - [x] 7.4 GREEN: implement the token bucket keyed on `CF-Connecting-IP`, the shared bucket for requests without it, and the body cap. Verify 7.3.
 - [x] 7.5 RED: add `the_gateway_unit_has_the_supervision_and_hardening_properties` to `services/sites-gateway/tests/unit_structure.rs`. It reads `deploy/systemd/ratatoskr-sites-gateway.service` and asserts `Type=exec`, `PartOf=` and `WantedBy=ratatoskr.target`, `MemoryMax`, `CPUQuota`, `SupplementaryGroups=ratatoskr-sites-bundles`, the bundle path in `ReadOnlyPaths` and not in `ReadWritePaths`. Confirm that it fails because the unit does not exist.
 - [x] 7.6 GREEN: write the unit and `deploy/systemd/sites-gateway.conf.example` with `127.0.0.1:8183`, `9473` and the Edge source address. Verify 7.5, and document the gateway in the repository's `README.md` and `deploy/README.md`. No separate test for the documentation.
+
+## 8. Review fixes (local; the review of groups 4 to 7)
+
+- [x] 8.1 RED (M1): add `forwarding.rs::dot_segments_and_encoded_separators_are_not_forwarded`: `content/../../site-b/...`, `%2e%2e` and `%2E%2E`, `.`, an empty segment, `%2f`, `%2F`, `%5c`, `%5C` and a backslash below `/_r` are 404 `sites.gateway.route_not_forwarded` and reach no Edge. Confirm that the code assertion fails because the prefix check forwards `content/../../site-b/...`.
+- [ ] 8.2 GREEN (M1): refuse a path below `/_r` with an empty segment, `.`, `..`, `%2e`, `%2f` or `%5c` in any letter case, or a backslash, before the allowlist. Verify 8.1.
+- [ ] 8.3 RED (M2): add `receipt.rs::a_pax_size_record_cannot_pass_the_limit`: a PAX `size` record of 5000 bytes on an entry whose ustar size is 0, with a limit of 4096 bytes, is `sites.bundle.too_large` and stores nothing. Confirm that the code assertion fails because the total reads the ustar field.
+- [ ] 8.4 GREEN (M2): count the bytes that the receipt writes and stop at the limit. Verify 8.3.
+- [ ] 8.5 RED (M3): add `limits.rs::a_full_table_evicts_the_least_recently_used_key` (a new key in a full table gets its own bucket, so the requests without an address keep theirs) and `ipv6_clients_share_the_bucket_of_their_64_prefix`. Confirm that the assertions fail because a new key in a full table falls back to the shared bucket and each IPv6 address has a bucket of its own.
+- [ ] 8.6 GREEN (M3): key an IPv6 address by its /64 prefix, and evict the least recently used bucket when the table is full. Verify 8.5.
+- [ ] 8.7 RED (M4): add `activation.rs::retention_never_removes_a_deploy_stored_after_the_last_activation`: with a retention of 2, a deploy stored and not yet activated survives an activation of another deploy. Confirm that the directory assertion fails because retention removes it.
+- [ ] 8.8 GREEN (M4): retention removes only deploys stored before the activation that runs. Verify 8.7.
+- [ ] 8.9 RED (L1, L11): add `receipt.rs::a_manifest_that_lists_itself_is_reserved` and `receipt.rs::a_file_and_a_folder_of_one_name_are_unsafe`. Confirm that the first fails with `sites.bundle.digest_mismatch` and the second with `sites.service_unavailable`.
+- [ ] 8.10 GREEN (L1, L11, L13): refuse a listed `ratatoskr-bundle.json` with `sites.bundle.reserved_path`, refuse a path whose prefix is a file of the bundle with `sites.bundle.unsafe_path`, and fsync the bundles directory after the rename (L13; no test can observe an fsync). Verify 8.9.
+- [ ] 8.11 (L17): pin `receipt.rs` refusals of a hard link, a device entry, a bundle over the limit, a duplicate entry and a path that is not NFC. No failing test first: the rules exist since 4.2; each test passed on its first run.
+- [ ] 8.12 RED (L12): add `receipt.rs::stale_staging_is_removed_at_start`. Confirm that the assertion fails because `DeployStore::remove_stale_staging` removes nothing.
+- [ ] 8.13 GREEN (L12): remove every `.staging/` directory of the tree, and call it when the service starts. Verify 8.12.
+- [ ] 8.14 RED (L4): add `static_serving.rs::a_link_out_of_the_site_directory_serves_nothing` and `a_deploy_of_another_site_serves_nothing`. Confirm that the status assertions fail because the gateway serves them.
+- [ ] 8.15 GREEN (L4): serve a deploy only when its resolved directory is inside the site directory and its manifest names the site. Verify 8.14.
+- [ ] 8.16 RED (L5, L6, L7): add `forwarding.rs::edge_that_sends_no_header_in_time_is_unavailable`, `ratatoskr_headers_of_edge_are_removed` and `forwarding_headers_of_the_client_are_removed`. Confirm that each fails on its assertion.
+- [ ] 8.17 GREEN (L5, L6, L7): a 30-second budget for Edge's answer head, no `x-ratatoskr-*` header in Edge's answer, and no `X-Forwarded-For`, `Forwarded`, `X-Real-IP` or `CF-*` header but `CF-Connecting-IP` in a forwarded request. Verify 8.16.
+- [ ] 8.18 RED (L14): extend `unit_structure.rs` with `IPAddressDeny=any`, `IPAddressAllow=localhost`, `ProtectHostname=yes` and `SystemCallFilter=~@privileged @resources`. Confirm that it fails because the unit lacks them.
+- [ ] 8.19 GREEN (L14): add them to the unit. Verify 8.18.
