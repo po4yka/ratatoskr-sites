@@ -1,7 +1,7 @@
 ## 1. Selection (workspace tasks 5.10, 5.11)
 
-- [ ] 1.1 RED: add `fixtures/selection-vault/` and `crates/publications/tests/selection.rs` with the seven tests of workspace task 5.10, each asserting the exact selected path set. Confirm that each set assertion fails because the stub selector returns the empty set.
-- [ ] 1.2 GREEN: implement the selection precedence, the modes `all` and `flagged`, and the `publish` site list. Verify 1.1.
+- [x] 1.1 RED: add `fixtures/selection-vault/` and `crates/publications/tests/selection.rs` with the seven tests of workspace task 5.10, each asserting the exact selected path set. Confirm that each set assertion fails because the stub selector returns the empty set.
+- [x] 1.2 GREEN: implement the selection precedence, the modes `all` and `flagged`, and the `publish` site list. Verify 1.1.
 
 ## 2. Slugs (workspace tasks 5.12, 5.13)
 
