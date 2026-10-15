@@ -216,6 +216,23 @@ impl DeployStore {
     }
 }
 
+impl DeployStore {
+    /// Remove every `.staging/` directory of the tree: what receipts left when the process
+    /// stopped during them. Call it once at the start, before any receipt runs.
+    ///
+    /// # Errors
+    ///
+    /// [`DeployError::Storage`] when the tree cannot be read.
+    #[expect(
+        clippy::unused_async,
+        reason = "the stub of task 8.12 removes nothing yet"
+    )]
+    pub async fn remove_stale_staging(&self) -> Result<usize, DeployError> {
+        let _ = &self.root;
+        Ok(0)
+    }
+}
+
 /// The answer of a receipt that stored or found `stored`.
 fn answer(stored: receipt::Stored) -> Result<DeployStored, DeployError> {
     let manifest = stored.manifest;

@@ -347,3 +347,25 @@ async fn a_bundle_over_the_limit_is_too_large() -> Outcome {
     assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
     store.cleanup().await
 }
+
+/// Review L12: what a receipt left in `.staging/` when the process stopped is removed at the start.
+#[tokio::test]
+async fn stale_staging_is_removed_at_start() -> Outcome {
+    let store = Store::new(5).await?;
+    let stale = store
+        .deploys
+        .site_dir(&Store::site()?)
+        .join(".staging")
+        .join("0190c0de")
+        .join("files");
+    std::fs::create_dir_all(&stale)?;
+    std::fs::write(stale.join("half.js"), b"half written")?;
+    let removed = store.deploys.remove_stale_staging().await?;
+    assert_eq!(
+        store.stored()?,
+        Vec::<String>::new(),
+        "no stale file remains"
+    );
+    assert_eq!(removed, 1, "one stale receipt is removed");
+    store.cleanup().await
+}
