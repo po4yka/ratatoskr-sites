@@ -13,6 +13,14 @@
 - [x] 4.11 RED: add `retention_keeps_current_and_previous` to `activation.rs`: with a retention count of five, a sixth deploy is activated, and the test asserts that the oldest other deploy is removed and that `current` and `previous` remain. Confirm that it fails because six directories remain.
 - [x] 4.12 GREEN: implement retention after activation. Verify 4.11, and document the store layout in `ratatoskr-sites`' `docs/ARCHITECTURE.md`. No separate test for the documentation.
 
+## 4a. The deploy routes of the sites service (local; no workspace task names them)
+
+Platform forwards `POST /v1/sites/{site}/deploys` and `POST .../deploys/{commit}/activate` to the
+domain API (SITE-026 group 8), so the service needs the routes that call the store of group 4.
+
+- [x] 4.13 RED: add `services/sites/tests/deploy_routes.rs` with `deploy_routes_store_and_activate_a_bundle` (a `site_deployer` claim of the site uploads a bundle, 200 with the commit and `created: true`; the owner activates it, 200 with the commit as `current_commit`) and `a_deployer_of_another_site_is_refused` (403 `sites.request.forbidden` for a `site_deployer` claim of another site, 400 `sites.request.invalid` for a body that is not a tar archive). Confirm that the status assertion of the first fails with 404 because the routes do not exist.
+- [ ] 4.14 GREEN: add the configuration `RATATOSKR__DEPLOYS__ROOT`, `RATATOSKR__DEPLOYS__MAX_BUNDLE_BYTES` and `RATATOSKR__DEPLOYS__RETENTION`, and the two routes over `DeployStore`, with a body limit of their own. Verify 4.13.
+
 ## 5. Gateway projection (workspace tasks 5.1 and 5.2)
 
 - [ ] 5.1 RED: add `services/sites/tests/gateway_projection.rs` with `withdrawal_rewrites_projection_within_five_seconds`, `hostname_change_rewrites_projection` and `approval_writes_projection_with_hostname`. Each publishes `evt.platform.site_approval.changed.v1` to a test JetStream, lets the service consume it through `ratatoskr_sites_approvals`, and asserts the content of `site.json`: no hostname and not approved for the withdrawal (within five seconds), `new.example` and not `old.example` for the change, the hostname and approved for the approval. Confirm that they fail because the consumer does not write `site.json`.
