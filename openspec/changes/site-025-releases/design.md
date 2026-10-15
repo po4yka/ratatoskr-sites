@@ -58,3 +58,8 @@ repository on `html5ever`'s tokenizer (MIT OR Apache-2.0): a browser's reading o
 pass, and only allowlisted tags, attributes and escaped text are written again. It allows no
 foreign content (`svg`, `math`), which is where mutation XSS comes from. A shared licence policy
 change would let a later change replace it with `ammonia`.
+
+The allowlist opens every non-void start tag whatever its self-closing flag, keeps at most 256 open
+elements, and keeps only the classes, heading ids and image sources that the renderer writes
+(review of 5.17). A heading id has no prefix, because the contract fixtures of `sites/page.v1`
+write `id="start-here"`; a later contract change can add one.

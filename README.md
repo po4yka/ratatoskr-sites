@@ -49,6 +49,30 @@ The design is in `ratatoskr-workspace`: ADR-0011, `docs/NOTES_AND_SITES.md`, and
 
 The domain API has no routes yet.
 
+## The HTML of a page
+
+The `html` of a page (`sites/page.v1`) passes a closed allowlist in this service
+(`crates/release/src/sanitise.rs`). A site that inserts it should still set these headers on its
+own pages, because the allowlist is one line of defence and not the only one:
+
+- `Content-Security-Policy` with `img-src 'self' https:` and no `script-src` that allows inline
+  script. A page image is either an asset of the release (`assets/<sha256>`, which the site serves
+  from its own origin through the gateway) or an `https:` URL; the allowlist removes the source of
+  any other image.
+- `Referrer-Policy: no-referrer` or `strict-origin`, so an `https:` image or link of a note does not
+  learn the path of the page that shows it.
+
+What the allowlist does to markup that a note writes:
+
+- An element outside the allowlist loses its tags and keeps its text. An attribute outside the
+  allowlist is removed, also an attribute that hides content (`hidden`, `style`, `aria-hidden`), so
+  text that the note hid with raw HTML becomes visible on the site. Do not hide text in a published
+  note with HTML; put it in a `%%` comment or in a note that the publication does not select.
+- `script`, `style`, `iframe`, `object`, `template`, `form`, `svg`, `math` and their kin are removed
+  with their content.
+- At most 256 elements are open at once, and a page whose HTML is over 1 MiB fails the build with
+  `sites.page_too_large`.
+
 ## Project status
 
 - [x] Service skeleton: strict configuration, logging, operator plane, embedded schema, CI gate.
