@@ -492,7 +492,8 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .begin()
                 .await
                 .map_err(BuildFailure::Database)?;
-            // Read again under the lock: another build may have switched the site meanwhile.
+            // Read again under the lock: another build may have switched the site meanwhile. Then
+            // that build's release stays current: this one writes, switches and announces nothing.
             let locked = lock_current(&mut transaction, site_id).await?;
             if locked.as_deref() == Some(release_id.as_str()) {
                 provenance
@@ -500,12 +501,11 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                     .await
                     .map_err(BuildFailure::Database)?;
                 transaction.commit().await.map_err(BuildFailure::Database)?;
-                return Ok(BuildOutcome {
-                    release_id,
-                    new_release: false,
-                });
             }
-            // It is no longer current: the transaction ends, and this build switches to it below.
+            return Ok(BuildOutcome {
+                release_id,
+                new_release: false,
+            });
         }
         for page in &built.pages {
             let hex = ratatoskr_sites_release::sha256_hex(&page.bytes);
