@@ -233,3 +233,48 @@ async fn a_pax_size_record_cannot_pass_the_limit() -> Outcome {
     assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
     store.cleanup().await
 }
+
+/// Review L1: a manifest that lists `ratatoskr-bundle.json` is refused as a reserved path.
+#[tokio::test]
+async fn a_manifest_that_lists_itself_is_reserved() -> Outcome {
+    let store = Store::new(5).await?;
+    let bundle = Bundle::new(&commit('d')).with("ratatoskr-bundle.json", b"{}", false);
+    let listed: Vec<_> = bundle
+        .files
+        .iter()
+        .filter(|(path, ..)| path != "ratatoskr-bundle.json")
+        .cloned()
+        .collect();
+    let refused = refusal(&store, bundle.archive_with(&listed, |_| Ok(()))?).await?;
+    assert_eq!(
+        refused
+            .as_ref()
+            .map(|(code, status, _)| (code.as_str(), *status)),
+        Some(("sites.bundle.reserved_path", 422))
+    );
+    assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
+    store.cleanup().await
+}
+
+/// Review L11: a file and a folder of one name are refused as unsafe paths, in either order.
+#[tokio::test]
+async fn a_file_and_a_folder_of_one_name_are_unsafe() -> Outcome {
+    let store = Store::new(5).await?;
+    for (first, second) in [("a", "a/b"), ("a/b", "a")] {
+        let bundle = Bundle::new(&commit('e'))
+            .with(first, b"first", false)
+            .with(second, b"second", false);
+        let mut ordered = bundle.files.clone();
+        ordered.sort_by_key(|(path, ..)| usize::from(path != first));
+        let refused = refusal(&store, bundle.archive_with(&ordered, |_| Ok(()))?).await?;
+        assert_eq!(
+            refused
+                .as_ref()
+                .map(|(code, status, _)| (code.as_str(), *status)),
+            Some(("sites.bundle.unsafe_path", 422)),
+            "{first} then {second}"
+        );
+        assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
+    }
+    store.cleanup().await
+}
