@@ -131,9 +131,9 @@ impl Tree {
 
     /// The configuration of a gateway over the tree.
     pub(crate) fn config(&self) -> GatewayConfig {
-        GatewayConfig {
-            sites_root: self.root.path().to_path_buf(),
-        }
+        let mut config = GatewayConfig::default();
+        config.sites.root = self.root.path().to_path_buf();
+        config
     }
 }
 

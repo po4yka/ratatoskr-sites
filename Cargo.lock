@@ -1935,13 +1935,21 @@ name = "ratatoskr-sites-gateway"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "figment",
+ "metrics-exporter-prometheus",
+ "ratatoskr-error-contracts",
+ "ratatoskr-identifiers",
+ "ratatoskr-sites-contracts",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tower",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -72,3 +72,18 @@ the event is applied, so an older event that the projection ignores rewrites the
 that is not approved lists no hostname. The workspace design also names the retention; the gateway
 does not read it, so the file leaves it out, and the retention stays a setting of the sites service.
 The approval projection holds one hostname, lower-cased in the file.
+
+### 10. The gateway rescans every two seconds and uses no inotify
+
+Workspace task 6.2 names inotify plus a two-second rescan. The spec requires that a rewritten
+projection takes effect within five seconds, and the rescan alone does that: a change waits at most
+two seconds and a lost event loses nothing. inotify would add the `notify` crate and its tree, and a
+second code path that the tests cannot hold to the bound. So the gateway rescans only. A rescan
+reads one small `site.json` per site.
+
+### 11. Codes of the gateway that the shared names do not list
+
+`docs/NOTES_AND_SITES.md` names `sites.gateway.unknown_host`, `sites.gateway.no_deploy` and
+`sites.gateway.route_not_forwarded`. The gateway also answers a missing file with
+`sites.page_not_found`, a write method on a static path with `sites.request.method_not_allowed`,
+and proposes `sites.gateway.rate_limited` (429) and `sites.gateway.body_too_large` (413).
