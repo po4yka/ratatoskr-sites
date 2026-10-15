@@ -10,7 +10,7 @@ use axum::Router;
 use axum::http::{Method, StatusCode};
 use serde_json::{Value, json};
 use support::bus::{Running, TestBus, TestManifest};
-use support::http::{call, owner};
+use support::http::{anonymous, call, owner};
 use support::{Failure, Fixture, SITE, request};
 
 type Outcome = Result<(), Failure>;
@@ -177,6 +177,82 @@ async fn narrowed_publication_drops_its_pages_in_a_build_from_the_release() -> O
         !slugs.contains(&"flag/tagged".to_owned()),
         "a note of a tag that is no longer included leaves the release: {slugs:?}"
     );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn deleted_publication_takes_its_attachment() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'manual', \
+         excluded_folders = '{private,secret}' where publication_id = 'pub-r'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    let image = b"\x89PNG secret image";
+    fixture.add_file("secret/x.png", image, "image/png")?;
+    fixture.add_indexed(
+        json!({
+            "path": "shared/n.md",
+            "embeds": [{ "link": "secret/x.png", "display_text": "secret/x.png", "form": "wiki",
+                         "target": "secret/x.png" }],
+        }),
+        "A shared note.\n\n![[secret/x.png]]\n",
+    )?;
+    publication(&fixture, "pub-a", "all", &["shared"], &[], &[]).await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-a"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    let digest = ratatoskr_sites_release::sha256_hex(image);
+    let (_, assets) = released(&fixture).await?;
+    assert!(assets.contains(&digest), "pub-a publishes the image");
+    let api = fixture.api().await?;
+    let asset = format!("/v1/sites/{SITE}/content/assets/{digest}");
+    assert_eq!(
+        call(&api, anonymous(Method::GET, &asset)?).await?.status,
+        StatusCode::OK
+    );
+
+    let removed = call(
+        &api,
+        owner(
+            Method::DELETE,
+            &format!("/v1/sites/{SITE}/publications/pub-a"),
+            fixture.owner,
+            Vec::new(),
+        )?,
+    )
+    .await?;
+    assert_eq!(removed.status, StatusCode::NO_CONTENT);
+    let answer = call(&api, anonymous(Method::GET, &asset)?).await?;
+    assert_eq!(
+        answer.status,
+        StatusCode::NOT_FOUND,
+        "the image that only pub-a allowed stops at once"
+    );
+
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+    built(&fixture).await?;
+    let (slugs, assets) = released(&fixture).await?;
+    assert!(
+        slugs.contains(&"shared/n".to_owned()),
+        "pub-r keeps the note"
+    );
+    assert!(
+        !assets.contains(&digest),
+        "the removal release has no image: {assets:?}"
+    );
+    let rows: i64 = sqlx::query_scalar(
+        "select count(*) from sites.release_sources s join sites.current_releases c \
+         on c.release_id = s.release_id where s.path = 'secret/x.png'",
+    )
+    .fetch_one(fixture.database.pool())
+    .await?;
+    assert_eq!(rows, 0, "the sources of the removal release have no image");
 
     running.stop().await;
     bus.cleanup().await?;
