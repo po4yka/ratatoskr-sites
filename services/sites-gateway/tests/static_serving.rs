@@ -193,3 +193,41 @@ async fn an_unknown_sdk_path_is_404_without_fallback() -> Outcome {
     assert_ne!(answer.body, ENTRY, "not the entry document");
     Ok(())
 }
+
+/// Review L4: a `current` link that resolves outside the site directory serves nothing.
+#[tokio::test]
+async fn a_link_out_of_the_site_directory_serves_nothing() -> Outcome {
+    let tree = sites()?;
+    let current = tree.site_dir("site-a").join("current");
+    std::fs::remove_file(&current)?;
+    std::os::unix::fs::symlink(
+        tree.site_dir("site-b").join("bundles").join(commit('1')),
+        &current,
+    )?;
+    let router = router_of(&tree.gateway());
+    let answer = get(&router, "a.example", "/app.js").await?;
+    assert_eq!(answer.code().as_deref(), Some("sites.gateway.no_deploy"));
+    assert_ne!(answer.body, b"console.log('b')", "no byte of site-b");
+    Ok(())
+}
+
+/// Review L4: a deploy whose manifest names another site serves nothing.
+#[tokio::test]
+async fn a_deploy_of_another_site_serves_nothing() -> Outcome {
+    let tree = sites()?;
+    let manifest = tree
+        .site_dir("site-a")
+        .join("bundles")
+        .join(commit('1'))
+        .join("ratatoskr-bundle.json");
+    let text = std::fs::read_to_string(&manifest)?;
+    std::fs::write(
+        &manifest,
+        text.replace("\"site_id\":\"site-a\"", "\"site_id\":\"site-b\""),
+    )?;
+    let router = router_of(&tree.gateway());
+    let answer = get(&router, "a.example", "/app.js").await?;
+    assert_eq!(answer.code().as_deref(), Some("sites.gateway.no_deploy"));
+    assert_eq!(answer.status, 404);
+    Ok(())
+}
