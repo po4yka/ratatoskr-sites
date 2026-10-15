@@ -202,3 +202,75 @@ async fn release_made_again_rewrites_its_provenance() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+/// shared/n.md with the frontmatter field `secret`, which pub-r allows and pub-a does not; pub-a
+/// renders the page, because its id comes first.
+async fn secret_field() -> Result<Fixture, Failure> {
+    let fixture = Fixture::new().await?;
+    sqlx::query(
+        "update sites.publications set release_mode = 'manual', frontmatter_allow = '{secret}'",
+    )
+    .execute(fixture.database.pool())
+    .await?;
+    fixture.add_indexed(
+        json!({ "path": "shared/n.md", "frontmatter": { "secret": "hush" } }),
+        "---\nsecret: hush\n---\nA shared note.\n",
+    )?;
+    publication(&fixture, "pub-a", &["shared"]).await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-a"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    Ok(fixture)
+}
+
+#[tokio::test]
+async fn deleted_publication_shows_no_new_frontmatter_key() -> Outcome {
+    let fixture = secret_field().await?;
+    let (bus, running, api) = started(&fixture).await?;
+    let before = page(&api, "shared/n").await?;
+    assert!(
+        !String::from_utf8_lossy(&before.body).contains("hush"),
+        "pub-a hides secret"
+    );
+
+    delete(&api, &fixture, "pub-a").await?;
+    built(&fixture).await?;
+    let after = page(&api, "shared/n").await?;
+    assert_eq!(after.status, StatusCode::OK, "pub-r keeps the page");
+    assert!(
+        !String::from_utf8_lossy(&after.body).contains("hush"),
+        "a build from the release shows no key that the page did not show"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn widened_allowlist_shows_no_new_key_in_a_build_from_the_release() -> Outcome {
+    let fixture = secret_field().await?;
+    let (bus, running, api) = started(&fixture).await?;
+    // pub-a allows secret now: a PUT, so a removal build from the release.
+    put(
+        &api,
+        &fixture,
+        "pub-a",
+        &json!({
+            "connection_id": fixture.index.connection(), "mode": "all", "release_mode": "manual",
+            "included_folders": ["shared"], "excluded_folders": [],
+            "included_tags": [], "frontmatter_allow": ["secret"],
+        }),
+    )
+    .await?;
+    built(&fixture).await?;
+    let after = page(&api, "shared/n").await?;
+    assert!(
+        !String::from_utf8_lossy(&after.body).contains("hush"),
+        "a wider allowlist shows a new key only with a build that reads the notes index"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
