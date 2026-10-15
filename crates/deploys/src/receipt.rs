@@ -6,7 +6,7 @@
 //! archive ends. Only a bundle that passed every check is renamed to `bundles/<commit>`; on any
 //! refusal the staging directory is removed, so no file of the bundle remains.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -96,6 +96,10 @@ pub(crate) fn receive(
         };
     }
     staging.kept = true;
+    // The rename is durable only when the directory that holds it is on disk.
+    if let Err(error) = std::fs::File::open(&bundles).and_then(|dir| dir.sync_all()) {
+        tracing::warn!(%error, "the bundles directory could not be synced");
+    }
     Ok(Stored {
         manifest,
         created: true,
@@ -125,6 +129,7 @@ fn unpack(
     let mut archive = tar::Archive::new(reader);
     let mut manifest = None;
     let mut received = Received::new();
+    let mut folders = BTreeSet::new();
     let mut total: u64 = 0;
     for entry in archive.entries().map_err(invalid)? {
         let mut entry = entry.map_err(invalid)?;
@@ -137,7 +142,11 @@ fn unpack(
             tar::EntryType::Directory => {
                 let folder = name.trim_end_matches('/');
                 if !folder.is_empty() && folder != "." {
-                    checked(folder)?;
+                    let folder = checked(folder)?;
+                    if received.contains_key(&folder) {
+                        return Err(DeployError::UnsafePath(folder));
+                    }
+                    folders.insert(folder);
                 }
                 continue;
             }
@@ -158,9 +167,7 @@ fn unpack(
             continue;
         }
         let path = checked(&name)?;
-        if received.contains_key(&path) {
-            return Err(DeployError::UnsafePath(path));
-        }
+        claim(&path, &received, &mut folders)?;
         // `entry.size()` is the length after a PAX `size` record; the ustar field alone is not.
         // The bytes that `store` writes are counted too, so no header can pass the limit.
         let budget = max_bytes.saturating_sub(total);
@@ -177,12 +184,35 @@ fn unpack(
     Ok((manifest, received))
 }
 
+/// Refuse `path` when the archive already holds it, holds a file below it, or holds a file at one
+/// of its folders; then record its folders. A file and a folder of one name cannot both be written.
+fn claim(
+    path: &str,
+    received: &Received,
+    folders: &mut BTreeSet<String>,
+) -> Result<(), DeployError> {
+    let unsafe_path = || DeployError::UnsafePath(path.to_owned());
+    if received.contains_key(path) || folders.contains(path) {
+        return Err(unsafe_path());
+    }
+    let parents: Vec<&str> = path
+        .match_indices('/')
+        .filter_map(|(at, _)| path.get(..at))
+        .collect();
+    if parents.iter().any(|parent| received.contains_key(*parent)) {
+        return Err(unsafe_path());
+    }
+    folders.extend(parents.into_iter().map(str::to_owned));
+    Ok(())
+}
+
 /// The first segment that the gateway reserves for forwarding to Edge.
 const FORWARDING_PREFIX: &str = "_r";
 
-/// `path` when it is a confined bundle path in NFC outside the forwarding prefix `_r/`.
+/// `path` when it is a confined bundle path in NFC outside the forwarding prefix `_r/`, and not
+/// the manifest itself.
 pub(crate) fn checked(path: &str) -> Result<String, DeployError> {
-    if path.split('/').next() == Some(FORWARDING_PREFIX) {
+    if path.split('/').next() == Some(FORWARDING_PREFIX) || path == MANIFEST {
         return Err(DeployError::ReservedPath(path.to_owned()));
     }
     if !is_nfc(path) || BundlePath::parse(path).is_err() {
