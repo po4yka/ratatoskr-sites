@@ -27,3 +27,8 @@
 
 - [ ] 6.1 RED: add `services/sites/tests/release_switch.rs` with the two tests of workspace task 5.20. Confirm that the release-id assertion of the first fails because pages are switched one at a time.
 - [ ] 6.2 GREEN: make the current-release switch and the outbox row one transaction, pin a page read to its release, and relay `evt.sites.release.published.v1`. Verify 6.1.
+
+## 7. The bound of a note read (review L1 of workspace task 5.9)
+
+- [ ] 7.1 RED: add `services/sites/tests/notes_blob_read.rs::reference_over_the_bound_reads_nothing`, which gives a reader with a bound of 4 bytes a reference of 7 bytes and a root that does not exist, and asserts `blob_length`. Confirm that the class assertion fails because the reader ignores the bound.
+- [ ] 7.2 GREEN: refuse a reference over the bound before the root is touched, and read every note and attachment of a build with the bound of 64 MiB (local design 5). Verify 7.1.

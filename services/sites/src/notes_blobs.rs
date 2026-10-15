@@ -64,13 +64,30 @@ impl NotesBlobError {
 #[derive(Debug, Clone)]
 pub struct NotesBlobReader {
     root: PathBuf,
+    max_bytes: Option<u64>,
 }
 
 impl NotesBlobReader {
-    /// A reader of the notes blob root at `root`.
+    /// A reader of the notes blob root at `root`, without a bound.
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            max_bytes: None,
+        }
+    }
+
+    /// The same reader, which refuses a reference of more than `max_bytes` bytes.
+    #[must_use]
+    pub const fn with_max_bytes(mut self, max_bytes: u64) -> Self {
+        self.max_bytes = Some(max_bytes);
+        self
+    }
+
+    /// The largest reference that the reader reads, when it has a bound.
+    #[must_use]
+    pub const fn max_bytes(&self) -> Option<u64> {
+        self.max_bytes
     }
 
     /// The bytes that `reference` names, after they are verified.

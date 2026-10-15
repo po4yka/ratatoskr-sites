@@ -113,3 +113,20 @@ async fn blob_of_another_length_is_blob_length() -> Result<(), Box<dyn std::erro
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn reference_over_the_bound_reads_nothing() -> Result<(), Box<dyn std::error::Error>> {
+    // The root does not exist: a reader that touched it before the bound would fail with
+    // blob_missing.
+    let parent = tempfile::tempdir()?;
+    let reader = NotesBlobReader::new(parent.path().join("no-such-root")).with_max_bytes(4);
+    let note = reference("ratatoskr-notes", NOTE_SHA256, 7)?;
+
+    let read = reader.read(&note).await;
+    assert_eq!(
+        read.as_ref().map_err(NotesBlobError::class).err(),
+        Some("blob_length"),
+        "a reference over the bound is refused before anything is read: {read:?}"
+    );
+    Ok(())
+}
