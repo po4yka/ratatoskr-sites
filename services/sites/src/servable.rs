@@ -3,10 +3,11 @@
 //! the effective set take the same path and cost no database query.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use ratatoskr_sites_contracts::SiteCapability;
 use ratatoskr_sites_persistence::Database;
+use tokio::sync::Notify;
 
 use crate::effective::effective_set;
 
@@ -23,6 +24,17 @@ pub struct Serving {
 #[derive(Debug, Default)]
 pub struct Servable {
     sites: RwLock<HashMap<String, Serving>>,
+    pause: Mutex<Option<RefreshPause>>,
+}
+
+/// A seam for the tests of the refresh: the next refresh stops between its read and its write,
+/// tells [`RefreshPause::reached`], and waits for [`RefreshPause::release`].
+#[derive(Debug, Clone, Default)]
+pub struct RefreshPause {
+    /// Notified when the refresh has read the database and waits.
+    pub reached: Arc<Notify>,
+    /// Notify it to let the refresh write.
+    pub release: Arc<Notify>,
 }
 
 impl Servable {
@@ -41,6 +53,16 @@ impl Servable {
             servable.refresh(database, &site_id).await?;
         }
         Ok(servable)
+    }
+
+    /// Stop the next refresh between its read and its write. For tests.
+    #[must_use]
+    pub fn pause_next_refresh(&self) -> RefreshPause {
+        let pause = RefreshPause::default();
+        if let Ok(mut held) = self.pause.lock() {
+            *held = Some(pause.clone());
+        }
+        pause
     }
 
     /// Read `site_id` again from the database.
@@ -66,6 +88,11 @@ impl Servable {
                 release_id,
                 capabilities,
             });
+        let pause = self.pause.lock().ok().and_then(|mut held| held.take());
+        if let Some(pause) = pause {
+            pause.reached.notify_one();
+            pause.release.notified().await;
+        }
         if let Ok(mut sites) = self.sites.write() {
             match serving {
                 Some(serving) => sites.insert(site_id.to_owned(), serving),
