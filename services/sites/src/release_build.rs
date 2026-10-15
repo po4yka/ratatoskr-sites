@@ -151,8 +151,12 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
         let outcome = self.build_site(&request.site_id, owner).await;
-        if let Some(operation_id) = request.operation_id {
-            self.report(owner, operation_id, &outcome).await?;
+        if let Some(operation_id) = request.operation_id
+            && let Err(error) = self.report(owner, operation_id, &outcome).await
+        {
+            // The outcome of the build stays the answer; Platform's stale-operation reaper ends an
+            // operation whose report is lost.
+            tracing::error!(%error, %operation_id, "the report of a build could not be written");
         }
         outcome
     }
@@ -373,7 +377,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         let event_id = Uuid::now_v7();
         let (class, message) = match outcome {
             Ok(_) => (String::new(), String::new()),
-            Err(failure) => (failure.class(), failure.message()),
+            Err(failure) => (failure.class(), safe_message(&failure.message())),
         };
         let report = match outcome {
             Ok(outcome) => BuildReport::Succeeded {
@@ -407,6 +411,35 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .map_err(BuildFailure::Database)?;
         Ok(())
     }
+}
+
+/// The longest message of an operation report, in UTF-8 bytes (`SafeMessage`).
+const MAX_MESSAGE_BYTES: usize = 1024;
+
+/// `text` as a message that `SafeMessage` accepts: control characters become spaces, and a text
+/// over [`MAX_MESSAGE_BYTES`] is cut at a character boundary and ends with `...`. An empty text
+/// becomes a fixed message.
+fn safe_message(text: &str) -> String {
+    let cleaned: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return "The build made no release.".to_owned();
+    }
+    if cleaned.len() <= MAX_MESSAGE_BYTES {
+        return cleaned.to_owned();
+    }
+    let mut cut = String::with_capacity(MAX_MESSAGE_BYTES);
+    for character in cleaned.chars() {
+        if cut.len() + character.len_utf8() > MAX_MESSAGE_BYTES - 3 {
+            break;
+        }
+        cut.push(character);
+    }
+    cut.push_str("...");
+    cut
 }
 
 /// The input of the release builder from the publication rows and the indexes.
