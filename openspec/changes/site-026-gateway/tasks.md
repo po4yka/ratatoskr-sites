@@ -23,7 +23,7 @@ domain API (SITE-026 group 8), so the service needs the routes that call the sto
 
 ## 5. Gateway projection (workspace tasks 5.1 and 5.2)
 
-- [ ] 5.1 RED: add `services/sites/tests/gateway_projection.rs` with `withdrawal_rewrites_projection_within_five_seconds`, `hostname_change_rewrites_projection` and `approval_writes_projection_with_hostname`. Each publishes `evt.platform.site_approval.changed.v1` to a test JetStream, lets the service consume it through `ratatoskr_sites_approvals`, and asserts the content of `site.json`: no hostname and not approved for the withdrawal (within five seconds), `new.example` and not `old.example` for the change, the hostname and approved for the approval. Confirm that they fail because the consumer does not write `site.json`.
+- [x] 5.1 RED: add `services/sites/tests/gateway_projection.rs` with `withdrawal_rewrites_projection_within_five_seconds`, `hostname_change_rewrites_projection` and `approval_writes_projection_with_hostname`. Each publishes `evt.platform.site_approval.changed.v1` to a test JetStream, lets the service consume it through `ratatoskr_sites_approvals`, and asserts the content of `site.json`: no hostname and not approved for the withdrawal (within five seconds), `new.example` and not `old.example` for the change, the hostname and approved for the approval. Confirm that they fail because the consumer does not write `site.json`.
 - [ ] 5.2 GREEN: write `site.json` by a temporary file and `rename(2)` from the approval projection that SITE-025 keeps, on every event for the site. Verify 5.1.
 
 ## 6. Gateway routing and serving (workspace tasks 6.1 to 6.6)
