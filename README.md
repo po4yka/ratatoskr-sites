@@ -59,9 +59,23 @@ The domain API:
 | `GET /v1/sites/{site}/publications`, `GET`, `PUT`, `DELETE .../publications/{publication}` | management | The publications of the site |
 | `GET`, `HEAD /v1/sites/{site}/content/*` | site-origin, `public` | The Content Delivery API, `openapi/content-delivery.json` |
 | `GET /internal/sites/{site}/manifest` | none; loopback only | The active manifest, for Edge's approval |
+| `GET /v1/sites/{site}/drafts/pages/{slug}`, `GET .../drafts/sources/{source_ref}` | site-origin, `draft.read` | The Markdown source, the `source_ref`, the revision and the slug of a note in scope, to a `site_owner` session only |
+| `GET /internal/sites/{site}/sources/{source_ref}`, `GET /internal/sites/{site}/scope?connection_id=&path=` | none; loopback only | The scope query of Edge: a `source_ref` to its connection and path, and back; 404 for a note that no publication selects |
 
 Every route outside `content/` refuses Edge's anonymous claim. The owner guide is
 [docs/OWNER_GUIDE.md](docs/OWNER_GUIDE.md).
+
+The bus subjects, under the `SITES` identity of `deploy/nats/identity.conf`:
+
+| Subject | Direction | Durable or meaning |
+|---|---|---|
+| `cmd.sites.release.build_requested.v1` | consumed | `ratatoskr_sites_release_builds`; only Edge publishes it |
+| `evt.notes.file.changed.v1` | consumed | `ratatoskr_sites_note_changes` |
+| `evt.notes.vault.disconnected.v1` | consumed | `ratatoskr_sites_vault_disconnections` |
+| `evt.platform.site_approval.changed.v1` | consumed | `ratatoskr_sites_approvals` |
+| `evt.sites.release.published.v1` | published | A release of a site became current |
+| `evt.sites.draft.changed.v1` | published | A note that a publication of a site selects changed in the vault; Edge sends it to the owner sessions as `draft.changed` |
+| `evt.platform.operation.reported.v1` | published | The report of a `sites.release.build` operation |
 
 ## The HTML of a page
 

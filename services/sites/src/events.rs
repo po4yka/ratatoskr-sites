@@ -8,7 +8,7 @@ use ratatoskr_identifiers::{
 use ratatoskr_operation_contracts::{
     OperationReported, OperationResultKind, OperationResultRef, OperationStatus,
 };
-use ratatoskr_sites_contracts::{Release, ReleasePublished};
+use ratatoskr_sites_contracts::{DraftChanged, Release, ReleasePublished, SiteId, Slug, SourceRef};
 use uuid::Uuid;
 
 /// The producer name on every envelope of this service.
@@ -19,6 +19,9 @@ pub const OPERATION_REPORTED: &str = "evt.platform.operation.reported.v1";
 
 /// The subject of the release event.
 pub const RELEASE_PUBLISHED: &str = "evt.sites.release.published.v1";
+
+/// The subject of the draft change event (SITE-027).
+pub const DRAFT_CHANGED: &str = "evt.sites.draft.changed.v1";
 
 /// The result kind of a build in its operation report.
 const RELEASE_RESULT: &str = "sites.release";
@@ -134,6 +137,41 @@ pub fn release_published(
         event_id,
         ReleasePublished::event_type(),
         &format!("site:{}", release.site_id.as_str()),
+        &format!("event:{event_id}"),
+        owner_id,
+        &payload,
+    )
+}
+
+/// `sites.draft.changed.v1`: the note `source_ref` of `site_id`, owned by `owner_id`, has the new
+/// revision `revision`, and the page `slug` when the current release publishes it. It carries no
+/// content and no vault path (workspace design D5 of `add-site-owner-editing-and-live`).
+///
+/// # Errors
+///
+/// [`EnvelopeBuildError`] when a value does not satisfy the contract.
+pub fn draft_changed(
+    event_id: Uuid,
+    owner_id: Uuid,
+    site_id: &str,
+    source_ref: &str,
+    revision: &str,
+    slug: Option<&str>,
+) -> Result<EventEnvelope, EnvelopeBuildError> {
+    let payload = DraftChanged {
+        site_id: SiteId::parse(site_id).map_err(|_| EnvelopeBuildError("site_id"))?,
+        source_ref: SourceRef::parse(source_ref).map_err(|_| EnvelopeBuildError("source_ref"))?,
+        revision: ratatoskr_identifiers::DigestHex::parse(revision)
+            .map_err(|_| EnvelopeBuildError("revision"))?,
+        slug: slug
+            .map(Slug::parse)
+            .transpose()
+            .map_err(|_| EnvelopeBuildError("slug"))?,
+    };
+    envelope(
+        event_id,
+        DraftChanged::event_type(),
+        &format!("site:{site_id}"),
         &format!("event:{event_id}"),
         owner_id,
         &payload,

@@ -18,8 +18,10 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::consumer::{self, BusTarget, Disposition, Durable, Durables, Inbound};
+use crate::events;
 use crate::notes_index::{IndexError, NotesIndex};
 use crate::release_build::{BuildFailure, report};
+use crate::scope::{self, ScopeError};
 use crate::servable::Servable;
 use crate::worker::{BuildQueue, SiteBuilds, build_queue};
 
@@ -158,6 +160,9 @@ impl<I: NotesIndex + 'static> Triggers<I> {
         let Some(sites) = self.sites_to_build(&change).await? else {
             return Ok(Disposition::Retry);
         };
+        let Some(drafts) = self.drafts_of(&change).await? else {
+            return Ok(Disposition::Retry);
+        };
         let mut transaction = self.database.pool().begin().await?;
         let fresh = sqlx::query(
             "insert into sites.inbox (message_id, subject, consumed_at) values ($1, $2, now()) \
@@ -177,6 +182,17 @@ impl<I: NotesIndex + 'static> Triggers<I> {
             )
             .bind(Uuid::now_v7())
             .bind(site_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        for (event_id, envelope) in drafts {
+            sqlx::query(
+                "insert into sites.outbox (event_id, subject, payload, created_at) \
+                 values ($1, $2, $3, now())",
+            )
+            .bind(event_id)
+            .bind(events::DRAFT_CHANGED)
+            .bind(envelope)
             .execute(&mut *transaction)
             .await?;
         }
@@ -273,6 +289,57 @@ impl<I: NotesIndex + 'static> Triggers<I> {
 }
 
 impl<I: NotesIndex + 'static> Triggers<I> {
+    /// The draft change events of `change`: one for each site whose effective publications select
+    /// the note now, in either release mode (SITE-027, workspace design D5). `None` when the notes
+    /// index is unavailable. A deleted note is selected by no publication, so it makes none.
+    async fn drafts_of(
+        &self,
+        change: &FileChanged,
+    ) -> Result<Option<Vec<(Uuid, serde_json::Value)>>, ApplyError> {
+        let sites: Vec<(String, Uuid)> = sqlx::query_as(
+            "select distinct p.site_id, s.owner_id from sites.publications p \
+             join sites.sites s on s.site_id = p.site_id \
+             where p.connection_id = $1 and p.state = 'active' order by p.site_id",
+        )
+        .bind(change.connection_id.0)
+        .fetch_all(self.database.pool())
+        .await?;
+        let connection_id = change.connection_id.0;
+        let path = change.path.as_str();
+        let mut drafts = Vec::new();
+        for (site_id, owner_id) in sites {
+            match scope::in_scope(&self.database, &self.index, &site_id, connection_id, path).await
+            {
+                Ok(Some(_)) => {}
+                Ok(None) => continue,
+                Err(ScopeError::Unavailable) => return Ok(None),
+                Err(ScopeError::Database(error)) => return Err(ApplyError::Database(error)),
+            }
+            let publications = scope::effective_publications(&self.database, &site_id).await?;
+            let slug =
+                scope::released_slug(&self.database, &site_id, &publications, connection_id, path)
+                    .await?;
+            let source_ref =
+                scope::source_ref(&self.database, &site_id, connection_id, path).await?;
+            let event_id = Uuid::now_v7();
+            let built = events::draft_changed(
+                event_id,
+                owner_id,
+                &site_id,
+                &source_ref,
+                change.revision.as_str(),
+                slug.as_deref(),
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|envelope| serde_json::to_value(envelope).map_err(|error| error.to_string()));
+            match built {
+                Ok(envelope) => drafts.push((event_id, envelope)),
+                Err(error) => tracing::warn!(%error, "a draft change event could not be built"),
+            }
+        }
+        Ok(Some(drafts))
+    }
+
     /// A vault disconnection: every publication over the connection becomes `suspended`. The
     /// current release of each site stays current (workspace spec `site-publications`).
     async fn disconnection(&self, payload: &[u8]) -> Result<Disposition, ApplyError> {

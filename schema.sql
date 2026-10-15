@@ -228,7 +228,8 @@ create table sites.outbox (
 
     -- A CLOSED list: a subject that Sites does not publish cannot be inserted.
     constraint outbox_subject_is_known
-        check (subject in ('evt.sites.release.published.v1', 'evt.platform.operation.reported.v1'))
+        check (subject in ('evt.sites.release.published.v1', 'evt.sites.draft.changed.v1',
+                           'evt.platform.operation.reported.v1'))
 );
 
 create index outbox_unpublished on sites.outbox (position) where published_at is null;
