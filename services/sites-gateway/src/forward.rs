@@ -70,6 +70,26 @@ pub(crate) fn is_forwarded(path: &str) -> bool {
     path == PREFIX || path.starts_with("/_r/")
 }
 
+/// Whether `path`, the path below `/_r`, holds only plain segments: none is empty, `.` or `..`,
+/// and none holds a backslash or an encoded dot, slash or backslash (`%2e`, `%2f`, `%5c` in any
+/// letter case). Edge or a later hop could resolve any of them to a path outside the site's own
+/// routes, so such a path is refused before the allowlist reads it.
+fn plain(path: &str) -> bool {
+    let Some(segments) = path.strip_prefix('/') else {
+        return false;
+    };
+    segments.split('/').all(|segment| {
+        let lower = segment.to_ascii_lowercase();
+        !(segment.is_empty()
+            || segment == "."
+            || segment == ".."
+            || segment.contains('\\')
+            || lower.contains("%2e")
+            || lower.contains("%2f")
+            || lower.contains("%5c"))
+    })
+}
+
 /// Whether `below`, the path below `/v1/sites/<site>/`, is a route of [`ALLOWED`].
 fn allowed(below: &str) -> bool {
     ALLOWED.iter().any(|route| {
@@ -87,6 +107,9 @@ pub(crate) async fn forward(gateway: &Gateway, site: &str, parts: Parts, body: B
     let Some(edge_path) = path.strip_prefix(PREFIX) else {
         return Fault::NotForwarded.into_response();
     };
+    if !plain(edge_path) {
+        return Fault::NotForwarded.into_response();
+    }
     let own = format!("/v1/sites/{site}/");
     if !edge_path.strip_prefix(&own).is_some_and(allowed) {
         return Fault::NotForwarded.into_response();
