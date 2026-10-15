@@ -12,6 +12,7 @@ use ratatoskr_sites::scope::NotesAccess;
 use ratatoskr_sites::servable::Servable;
 use ratatoskr_sites::sites_blobs::SitesBlobs;
 use ratatoskr_sites::triggers::Shared;
+use ratatoskr_sites_deploys::{DeployStore, Limits};
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
@@ -120,7 +121,21 @@ impl Fixture {
             self.index.clone(),
             NotesBlobReader::new(self.notes_root.path()),
         );
-        let state = ApiState::load(shared, SitesBlobs::new(self.sites_root.path()), notes).await?;
+        let deploys = DeployStore::new(
+            self.database.database.clone(),
+            self.deploys_root.path().to_path_buf(),
+            Limits {
+                max_bundle_bytes: 64 * 1024 * 1024,
+                retention: 5,
+            },
+        );
+        let state = ApiState::load(
+            shared,
+            SitesBlobs::new(self.sites_root.path()),
+            notes,
+            (deploys, 64 * 1024 * 1024),
+        )
+        .await?;
         Ok(router(state))
     }
 }

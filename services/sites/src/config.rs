@@ -59,6 +59,10 @@ pub struct SitesConfig {
     #[serde(default)]
     pub notes: NotesConfig,
 
+    /// The sites tree of the deploys and the gateway projection (SITE-026).
+    #[serde(default)]
+    pub deploys: DeploysConfig,
+
     /// The graceful stop.
     #[serde(default)]
     pub shutdown: ShutdownConfig,
@@ -100,6 +104,45 @@ impl Default for ApiConfig {
             listen_address: default_api_listen_address(),
         }
     }
+}
+
+/// `RATATOSKR__DEPLOYS__*`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeploysConfig {
+    /// The sites tree: the bundles, the `current` and `previous` links and `site.json` of each
+    /// site. The service is its only writer; the sites gateway reads it.
+    #[serde(default = "default_deploys_root")]
+    pub root: PathBuf,
+    /// The largest bundle, the sum of its file sizes.
+    #[serde(default = "default_max_bundle_bytes")]
+    pub max_bundle_bytes: u64,
+    /// How many deploys a site keeps, the current and the previous one among them.
+    #[serde(default = "default_retention")]
+    pub retention: usize,
+}
+
+impl Default for DeploysConfig {
+    fn default() -> Self {
+        Self {
+            root: default_deploys_root(),
+            max_bundle_bytes: default_max_bundle_bytes(),
+            retention: default_retention(),
+        }
+    }
+}
+
+fn default_deploys_root() -> PathBuf {
+    PathBuf::from("/mnt/nvme/ratatoskr/sites")
+}
+
+/// 64 MiB, the default of workspace design D4.
+const fn default_max_bundle_bytes() -> u64 {
+    64 * 1024 * 1024
+}
+
+const fn default_retention() -> usize {
+    5
 }
 
 /// `RATATOSKR__DATABASE__*`.
@@ -434,6 +477,20 @@ fn validate(config: &SitesConfig) -> Vec<Violation> {
             key: "database.acquire_timeout_seconds",
             env_var: "RATATOSKR__DATABASE__ACQUIRE_TIMEOUT_SECONDS",
             rule: "must be 1..=60",
+        });
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.deploys.max_bundle_bytes) {
+        found.push(Violation {
+            key: "deploys.max_bundle_bytes",
+            env_var: "RATATOSKR__DEPLOYS__MAX_BUNDLE_BYTES",
+            rule: "must be 1..=1073741824",
+        });
+    }
+    if !(2..=100).contains(&config.deploys.retention) {
+        found.push(Violation {
+            key: "deploys.retention",
+            env_var: "RATATOSKR__DEPLOYS__RETENTION",
+            rule: "must be 2..=100: the current and the previous deploy are always kept",
         });
     }
     if !(1..=60).contains(&config.shutdown.grace_seconds) {

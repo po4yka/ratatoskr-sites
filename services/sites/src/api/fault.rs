@@ -31,6 +31,15 @@ pub(crate) enum Fault {
     ManifestInvalid(String),
     /// A query or a read failed.
     Unavailable,
+    /// A deploy or an activation was refused or failed (SITE-026); the store names the code.
+    Deploy {
+        /// The status of the answer.
+        status: StatusCode,
+        /// The stable code.
+        code: &'static str,
+        /// What the deployer reads, for example the path of a refused file.
+        message: String,
+    },
 }
 
 impl Fault {
@@ -96,6 +105,11 @@ impl Fault {
                 detail.as_str(),
                 false,
             ),
+            Self::Deploy {
+                status,
+                code,
+                message,
+            } => (*status, code, message.as_str(), status.is_server_error()),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "sites.service_unavailable",

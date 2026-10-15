@@ -5,6 +5,7 @@
 //! sends, and this listener is reachable only on loopback.
 
 mod delivery;
+mod deploys;
 mod drafts;
 mod fault;
 mod manage;
@@ -16,7 +17,8 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse as _, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
+use ratatoskr_sites_deploys::DeployStore;
 use ratatoskr_sites_persistence::Database;
 
 use crate::scope::NotesAccess;
@@ -35,11 +37,14 @@ pub struct ApiState {
     blobs: SitesBlobs,
     servable: Arc<Servable>,
     notes: NotesAccess,
+    deploys: DeployStore,
+    deploys_limit: u64,
 }
 
 impl ApiState {
-    /// The state of the routes over `shared`, the sites blob root `blobs` and the notes that the
-    /// routes of the site owner session read, `notes`.
+    /// The state of the routes over `shared`, the sites blob root `blobs`, the notes that the
+    /// routes of the site owner session read, `notes`, and the deploy store `deploys`, whose
+    /// largest bundle is `max_bundle_bytes`.
     ///
     /// # Errors
     ///
@@ -52,12 +57,16 @@ impl ApiState {
         shared: &Shared,
         blobs: SitesBlobs,
         notes: NotesAccess,
+        deploys: (DeployStore, u64),
     ) -> Result<Arc<Self>, sqlx::Error> {
+        let (deploys, deploys_limit) = deploys;
         Ok(Arc::new(Self {
             database: shared.database.clone(),
             blobs,
             servable: Arc::clone(&shared.servable),
             notes,
+            deploys,
+            deploys_limit,
         }))
     }
 
@@ -102,6 +111,15 @@ pub fn router(state: Arc<ApiState>) -> Router {
             get(drafts::source),
         )
         .route("/v1/sites/{site}/drafts/pages/{*slug}", get(drafts::page))
+        // The deploy routes (SITE-026): the archive streams under a limit of its own.
+        .route(
+            "/v1/sites/{site}/deploys",
+            post(deploys::upload).layer(DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/v1/sites/{site}/deploys/{commit}/activate",
+            post(deploys::activate),
+        )
         .route_layer(middleware::from_fn(require_owner))
         // The Content Delivery API: Edge's anonymous claim, no owner claim.
         .route("/v1/sites/{site}/content/release", get(delivery::release))

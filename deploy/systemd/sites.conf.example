@@ -23,3 +23,9 @@ RATATOSKR__NOTES__BASE_URL=http://127.0.0.1:8099
 # is mode 0400, owner ratatoskr-sites.
 RATATOSKR__BUS__URL=nats://127.0.0.1:4222
 RATATOSKR__BUS__NKEY_SEED_PATH=/etc/ratatoskr/sites.nkey
+
+# The sites tree (SITE-026): the bundles, the current and previous links and site.json of each site.
+# The service is its only writer; ratatoskr-sites-gateway reads it through the group
+# ratatoskr-sites-bundles. A bundle is at most RATATOSKR__DEPLOYS__MAX_BUNDLE_BYTES (default 64 MiB),
+# and a site keeps RATATOSKR__DEPLOYS__RETENTION deploys (default 5).
+RATATOSKR__DEPLOYS__ROOT=/mnt/nvme/ratatoskr/sites

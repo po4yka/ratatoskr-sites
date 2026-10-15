@@ -1874,6 +1874,7 @@ dependencies = [
  "ratatoskr-operation-contracts",
  "ratatoskr-sites",
  "ratatoskr-sites-contracts",
+ "ratatoskr-sites-deploys",
  "ratatoskr-sites-manifest",
  "ratatoskr-sites-persistence",
  "ratatoskr-sites-publications",

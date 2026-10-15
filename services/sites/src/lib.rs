@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use ratatoskr_sites_deploys::{DeployStore, Limits};
 use ratatoskr_sites_persistence::Database;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -163,9 +164,22 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
         NotesBlobReader::new(&config.blobs.notes_root)
             .with_max_bytes(release_build::MAX_NOTE_BYTES),
     );
-    let api_state = ApiState::load(&shared, SitesBlobs::new(&config.blobs.root), notes)
-        .await
-        .map_err(|error| format!("the domain state could not be read: {error}"))?;
+    let deploys = DeployStore::new(
+        database.clone(),
+        config.deploys.root.clone(),
+        Limits {
+            max_bundle_bytes: config.deploys.max_bundle_bytes,
+            retention: config.deploys.retention,
+        },
+    );
+    let api_state = ApiState::load(
+        &shared,
+        SitesBlobs::new(&config.blobs.root),
+        notes,
+        (deploys, config.deploys.max_bundle_bytes),
+    )
+    .await
+    .map_err(|error| format!("the domain state could not be read: {error}"))?;
     let runtime = Arc::new(RuntimeState::new(database.clone()));
     let admin = bind(config.admin.bind, "operator").await?;
     let api = bind(config.api.listen_address, "domain").await?;

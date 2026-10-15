@@ -12,6 +12,7 @@ name = "ratatoskr-sites"
 path = "src/main.rs"
 
 [dependencies]
+ratatoskr-sites-deploys.workspace     = true
 ratatoskr-sites-manifest.workspace    = true
 ratatoskr-sites-persistence.workspace = true
 ratatoskr-identifiers.workspace       = true
@@ -38,7 +39,7 @@ sha2.workspace                        = true
 sqlx.workspace                        = true
 thiserror.workspace                   = true
 tokio.workspace                       = true
-tokio-util.workspace                  = true
+tokio-util                            = { workspace = true, features = ["io"] }
 tracing.workspace                     = true
 tracing-subscriber.workspace          = true
 uuid.workspace                        = true

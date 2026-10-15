@@ -84,6 +84,7 @@ pub(crate) struct Fixture {
     pub(crate) database: TestDatabase,
     pub(crate) notes_root: tempfile::TempDir,
     pub(crate) sites_root: tempfile::TempDir,
+    pub(crate) deploys_root: tempfile::TempDir,
     pub(crate) index: StubIndex,
     pub(crate) owner: Uuid,
 }
@@ -180,6 +181,7 @@ impl Fixture {
         let database = TestDatabase::create().await?;
         let notes_root = tempfile::tempdir()?;
         let sites_root = tempfile::tempdir()?;
+        let deploys_root = tempfile::tempdir()?;
         let files = load_index(Path::new(FIXTURE))?;
         for file in &files {
             let bytes = std::fs::read(Path::new(FIXTURE).join("vault").join(&file.path))?;
@@ -206,6 +208,7 @@ impl Fixture {
             database,
             notes_root,
             sites_root,
+            deploys_root,
             index: StubIndex {
                 connection,
                 files: Arc::new(Mutex::new(files)),

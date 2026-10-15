@@ -33,9 +33,11 @@ archive lacks is `sites.bundle.digest_mismatch` with its path.
 
 ### 4. Modes in the tree
 
-The sites unit runs with `UMask=0077`. The gateway reads the tree as a member of the group
-`ratatoskr-sites-bundles`, which the host role gives the setgid root. So the sites service sets the
-mode of what it writes: `2750` for a directory and `0640` for a file, after it creates it.
+The gateway reads the tree as a member of the group `ratatoskr-sites-bundles`, which the host role
+gives the setgid root (`2750`). A directory made in a setgid directory gets its group and the setgid
+bit, so the service needs no `chmod`: its unit has `UMask=0027`, which makes a deploy directory
+`2750` and a file `0640`. A `chmod` that sets the setgid bit would not work, because the service
+user is not a member of the group and the kernel clears the bit.
 
 ### 5. Activation needs no download
 
@@ -46,3 +48,19 @@ asserts the links and that the stored deploy is the same directory as before.
 
 After an activation, the store keeps the current and the previous deploy and the newest others up to
 the retention count, by the time that each deploy directory was stored, and removes the rest.
+
+### 7. The deploy routes check the device claim again
+
+Edge forwards the deploy routes for the owner's primary session and for a `site_deployer` device of
+the site. The routes refuse, with `sites.request.forbidden`, a request whose claims name a device
+that is not a `site_deployer` of the site of the route. The archive streams into the receipt with a
+limit of the bundle limit and 16 MiB of tar headers; a declared length above it is refused before
+the body is read.
+
+### 8. No repository binds a bundle to a site
+
+The bundle manifest names the repository that built it, but the site record does not: the site
+manifest `sites/site-manifest.v1`, the approval event, Platform's `identity.site_approvals` and
+`sites.sites` hold no repository. So the receipt cannot refuse a bundle of another repository whose
+manifest names the site, and this change does not invent a repository field. The gap is reported to
+the workspace.

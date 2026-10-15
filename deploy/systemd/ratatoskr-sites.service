@@ -52,7 +52,10 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
-UMask=0077
+# 0027, not 0077: the sites tree /mnt/nvme/ratatoskr/sites is 2750 with the group
+# ratatoskr-sites-bundles (SITE-026), so a deploy directory is 2750 and a file 0640, and the sites
+# gateway reads them as a member of that group. Nothing is readable by others.
+UMask=0027
 # `ratatoskr` is the shared group of every Ratatoskr unit: /etc/ratatoskr is 0750 root:ratatoskr and
 # /mnt/nvme/ratatoskr/logs 0770 root:ratatoskr (ratatoskr-platform deploy/README.md step 1), so
 # without it this process cannot reach its own nkey seed. `Group=` sets the primary group only.
@@ -64,7 +67,8 @@ UMask=0077
 SupplementaryGroups=ratatoskr ratatoskr-notes-blobs
 # The sites blob root holds the pages and the assets of each release. The service reads note bytes
 # from the notes blob root and never writes there.
-ReadWritePaths=/mnt/nvme/ratatoskr/blobs/ratatoskr-sites
+# The sites tree holds the deploys of each site and the gateway projection (SITE-026).
+ReadWritePaths=/mnt/nvme/ratatoskr/blobs/ratatoskr-sites /mnt/nvme/ratatoskr/sites
 ReadOnlyPaths=/etc/ratatoskr/sites.nkey /mnt/nvme/ratatoskr/blobs/ratatoskr-notes
 
 [Install]
