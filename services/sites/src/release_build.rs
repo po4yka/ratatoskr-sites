@@ -388,11 +388,14 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
     }
 
     /// The files that the current release of `site_id` was built from: for each published note
-    /// and attachment, its vault connection, the projection of its indexed file, and the
-    /// publications that selected it (none for an attachment).
+    /// and attachment, its vault connection, the projection of its indexed file with the stored
+    /// selection inputs (`publish: true` when its value named the site, and the tags that matched
+    /// an included tag), and the publications that selected it (none for an attachment).
     async fn released_files(&self, site_id: &str) -> Result<Vec<ReleasedFile>, BuildFailure> {
-        let rows: Vec<(Uuid, serde_json::Value, Vec<String>)> = sqlx::query_as(
-            "select s.connection_id, s.file, s.publication_ids from sites.release_sources s \
+        type Row = (Uuid, serde_json::Value, Vec<String>, bool, Vec<String>);
+        let rows: Vec<Row> = sqlx::query_as(
+            "select s.connection_id, s.file, s.publication_ids, s.names_site, s.selection_tags \
+             from sites.release_sources s \
              join sites.current_releases c on c.release_id = s.release_id \
              where c.site_id = $1 order by s.connection_id, s.path",
         )
@@ -401,10 +404,20 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         .await
         .map_err(BuildFailure::Database)?;
         rows.into_iter()
-            .map(|(connection_id, file, publications)| {
-                serde_json::from_value(file)
-                    .map(|file| (connection_id, file, publications))
-                    .map_err(|_| BuildFailure::PublicationInvalid)
+            .map(|(connection_id, file, publications, names_site, tags)| {
+                let mut file: IndexedFile =
+                    serde_json::from_value(file).map_err(|_| BuildFailure::PublicationInvalid)?;
+                // The selection inputs that the release stored, as the selection reads them.
+                if let Some(frontmatter) = file.frontmatter.as_mut() {
+                    frontmatter.remove("publish");
+                }
+                if names_site {
+                    file.frontmatter
+                        .get_or_insert_with(serde_json::Map::new)
+                        .insert("publish".to_owned(), serde_json::Value::Bool(true));
+                }
+                file.tags = tags.iter().map(|tag| format!("#{tag}")).collect();
+                Ok((connection_id, file, publications))
             })
             .collect()
     }
@@ -670,29 +683,18 @@ fn site_input<'a>(
         let files = indexes.get(&key).ok_or(BuildFailure::IndexUnavailable)?;
         let publication_id = PublicationId::parse(&row.publication_id)
             .map_err(|_| BuildFailure::PublicationInvalid)?;
-        let publication = if row.released {
-            // The files are the notes that the publication selected in the current release; the
-            // mode `all` without folders or tags takes each of them as it is.
-            Publication {
-                site_id: site.clone(),
-                publication_id,
-                mode: PublicationMode::All,
-                included_folders: Vec::new(),
-                excluded_folders: Vec::new(),
-                included_tags: Vec::new(),
-            }
-        } else {
-            Publication {
-                site_id: site.clone(),
-                publication_id,
-                mode: match row.mode.as_str() {
-                    "all" => PublicationMode::All,
-                    _ => PublicationMode::Flagged,
-                },
-                included_folders: row.included_folders.clone(),
-                excluded_folders: row.excluded_folders.clone(),
-                included_tags: row.included_tags.clone(),
-            }
+        // A publication read from the release has only the files that it selected then; its
+        // current configuration selects among them, so it can only shrink.
+        let publication = Publication {
+            site_id: site.clone(),
+            publication_id,
+            mode: match row.mode.as_str() {
+                "all" => PublicationMode::All,
+                _ => PublicationMode::Flagged,
+            },
+            included_folders: row.included_folders.clone(),
+            excluded_folders: row.excluded_folders.clone(),
+            included_tags: row.included_tags.clone(),
         };
         publications.push(PublicationInput {
             publication,

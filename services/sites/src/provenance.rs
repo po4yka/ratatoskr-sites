@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ratatoskr_sites_publications::{BuildError, IndexedFile, assign_slugs, select};
 use ratatoskr_sites_release::{Built, DEFAULT_FRONTMATTER_ALLOWLIST, SiteInput, selected_notes};
+use serde_json::Value;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -21,6 +22,12 @@ struct Source {
     keys: BTreeSet<String>,
     /// The publications that select the note; none for an attachment.
     publications: BTreeSet<String>,
+    /// Whether the `publish` value of the note names the site: `true`, the site id, or a list
+    /// with the site id.
+    names_site: bool,
+    /// The tags of the note, in lower case and without `#`, that matched an included tag of a
+    /// selecting publication.
+    selection_tags: BTreeSet<String>,
 }
 
 /// The published files of a release and the publications of its pages.
@@ -71,6 +78,8 @@ impl Provenance {
                         file: file.clone(),
                         keys: BTreeSet::new(),
                         publications: BTreeSet::new(),
+                        names_site: false,
+                        selection_tags: BTreeSet::new(),
                     });
                 }
                 let Some(source) = sources.iter_mut().find(|source| same(source)) else {
@@ -78,6 +87,10 @@ impl Provenance {
                 };
                 source.keys.extend(keys.clone());
                 source.publications.insert(publication_id.clone());
+                source.names_site = names_site(file, site.site_id.as_str());
+                source
+                    .selection_tags
+                    .extend(matched_tags(file, &input.publication.included_tags));
             }
         }
         let assigned = assign_slugs(&selected_notes(site))?;
@@ -155,6 +168,8 @@ impl Provenance {
                         file: file.clone(),
                         keys: BTreeSet::new(),
                         publications: BTreeSet::new(),
+                        names_site: false,
+                        selection_tags: BTreeSet::new(),
                     });
                 }
             }
@@ -202,13 +217,16 @@ impl Provenance {
         for source in &self.sources {
             sqlx::query(
                 "insert into sites.release_sources (release_id, connection_id, path, file, \
-                 publication_ids) values ($1, $2, $3, $4, $5) on conflict do nothing",
+                 publication_ids, names_site, selection_tags) \
+                 values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing",
             )
             .bind(release_id)
             .bind(source.connection)
             .bind(&source.file.path)
             .bind(sqlx::types::Json(self.projection(source)))
             .bind(source.publications.iter().cloned().collect::<Vec<_>>())
+            .bind(source.names_site)
+            .bind(source.selection_tags.iter().cloned().collect::<Vec<_>>())
             .execute(&mut *connection)
             .await?;
         }
@@ -236,4 +254,29 @@ impl Provenance {
             .map(|(digest, publications)| (digest, publications.into_iter().collect()))
             .collect()
     }
+}
+
+/// Whether the `publish` value of `file` names the site `site_id`, as the selection reads it.
+fn names_site(file: &IndexedFile, site_id: &str) -> bool {
+    match file.frontmatter_value("publish") {
+        Some(Value::Bool(true)) => true,
+        Some(Value::String(named)) => named == site_id,
+        Some(Value::Array(sites)) => sites.iter().any(|named| named.as_str() == Some(site_id)),
+        _ => false,
+    }
+}
+
+/// The tags of `file`, in lower case and without `#`, that match one of `included`, as the
+/// selection compares them.
+fn matched_tags(file: &IndexedFile, included: &[String]) -> Vec<String> {
+    file.tags
+        .iter()
+        .map(|tag| tag.trim_start_matches('#'))
+        .filter(|tag| {
+            included
+                .iter()
+                .any(|included| included.trim_start_matches('#').eq_ignore_ascii_case(tag))
+        })
+        .map(str::to_lowercase)
+        .collect()
 }

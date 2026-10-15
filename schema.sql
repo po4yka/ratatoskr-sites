@@ -169,6 +169,12 @@ create table sites.release_sources (
     -- The publications that selected the note; empty for an attachment. A build from the release
     -- takes exactly these rows for each publication and does not select again.
     publication_ids text[] not null default '{}',
+    -- The selection inputs of a note, limited to published facts: whether its `publish` value
+    -- named the site, and its tags (lower case, without `#`) that matched an included tag of a
+    -- selecting publication. A build from the release selects again with the current
+    -- configuration, so a publication can only shrink.
+    names_site      boolean not null default false,
+    selection_tags  text[]  not null default '{}',
     primary key (release_id, connection_id, path)
 );
 
