@@ -95,8 +95,10 @@ async fn page_of_earlier_release_is_not_found() -> Outcome {
     let path = format!("/v1/sites/{SITE}/content/pages/other");
     assert_eq!(get(&fixture, &path).await?.status, StatusCode::OK);
 
-    // The note leaves the vault, so the next release has no page for it.
-    fixture.remove("other.md")?;
+    fixture.change(
+        "other.md",
+        "---\ntitle: Other page\npublish: false\n---\nNo longer published.\n",
+    )?;
     fixture.builder().build(&request(None)).await?;
     let answer = get(&fixture, &path).await?;
     assert_eq!(
@@ -333,5 +335,91 @@ async fn removed_publication_stops_at_once() -> Outcome {
     assert_eq!(hits(&api, "target").await?, Vec::<String>::new());
     assert_eq!(listed(&api).await?, Vec::<String>::new());
     assert_eq!(fixture.release_count().await?, 1, "no build ran");
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn active_content_is_never_sniffed() -> Outcome {
+    let fixture = Fixture::new().await?;
+    fixture.replace(
+        "attachments/2026/passport-scan-blurred.png",
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>",
+        "image/svg+xml",
+    )?;
+    fixture.builder().build(&request(None)).await?;
+    let release = release(&fixture).await?;
+    let asset = release.assets.first().ok_or("the release has an asset")?;
+    assert_eq!(asset.media_type.as_str(), "image/svg+xml");
+
+    let answer = get(
+        &fixture,
+        &format!("/v1/sites/{SITE}/content/assets/{}", asset.sha256.as_str()),
+    )
+    .await?;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        answer
+            .headers
+            .get(header::CONTENT_DISPOSITION)
+            .map(axum::http::HeaderValue::as_bytes),
+        Some(&b"attachment"[..]),
+        "an SVG asset is a download, never a document of the delivery origin"
+    );
+    for path in [
+        format!("/v1/sites/{SITE}/content/assets/{}", asset.sha256.as_str()),
+        format!("/v1/sites/{SITE}/content/release"),
+        format!("/v1/sites/{SITE}/content/pages/other"),
+        format!("/v1/sites/{SITE}/content/search?q=other"),
+        "/v1/sites/never-was/content/release".to_owned(),
+    ] {
+        let answer = get(&fixture, &path).await?;
+        assert_eq!(
+            answer
+                .headers
+                .get("x-content-type-options")
+                .map(axum::http::HeaderValue::as_bytes),
+            Some(&b"nosniff"[..]),
+            "{path}: the browser does not guess the media type"
+        );
+    }
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn refusals_of_content_routes_are_not_stored() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let built = fixture.builder().build(&request(None)).await?;
+    let invalid = get(&fixture, &format!("/v1/sites/{SITE}/content/search?q=")).await?;
+    assert_eq!(invalid.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid
+            .headers
+            .get(header::CACHE_CONTROL)
+            .map(axum::http::HeaderValue::as_bytes),
+        Some(&b"no-store"[..]),
+        "an invalid request is never stored"
+    );
+
+    // The stored page is gone from the sites blob root, so the service cannot answer.
+    let release: Release = serde_json::from_slice(&fixture.document(&built.release_id).await?)?;
+    let page = release
+        .pages
+        .iter()
+        .find(|page| page.slug.as_str() == "other")
+        .ok_or("the release has the page other")?;
+    std::fs::remove_file(support::blob_path(
+        fixture.sites_root.path(),
+        page.page_sha256.as_str(),
+    )?)?;
+    let unavailable = get(&fixture, &format!("/v1/sites/{SITE}/content/pages/other")).await?;
+    assert_eq!(unavailable.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        unavailable
+            .headers
+            .get(header::CACHE_CONTROL)
+            .map(axum::http::HeaderValue::as_bytes),
+        Some(&b"no-store"[..]),
+        "a failure is never stored"
+    );
     fixture.cleanup().await
 }

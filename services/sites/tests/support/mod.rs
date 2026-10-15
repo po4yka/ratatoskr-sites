@@ -33,9 +33,16 @@ pub(crate) const MAX_NOTE_BYTES: u64 = 64 * 1024 * 1024;
 pub(crate) struct StubIndex {
     connection: Uuid,
     files: Arc<Mutex<Vec<IndexedFile>>>,
+    failures: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl StubIndex {
+    /// The next `count` reads answer that the index is unavailable.
+    pub(crate) fn fail_next(&self, count: usize) {
+        self.failures
+            .store(count, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// The connection of the stub.
     pub(crate) const fn connection(&self) -> Uuid {
         self.connection
@@ -54,6 +61,14 @@ impl StubIndex {
 impl NotesIndex for StubIndex {
     async fn files(&self, connection_id: Uuid) -> Result<Vec<IndexedFile>, IndexUnavailable> {
         if connection_id != self.connection {
+            return Err(IndexUnavailable);
+        }
+        let failing = self.failures.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |left| left.checked_sub(1),
+        );
+        if failing.is_ok() {
             return Err(IndexUnavailable);
         }
         Ok(self.files.lock().map_err(|_| IndexUnavailable)?.clone())
@@ -189,6 +204,7 @@ impl Fixture {
             index: StubIndex {
                 connection,
                 files: Arc::new(Mutex::new(files)),
+                failures: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             },
             owner,
         })

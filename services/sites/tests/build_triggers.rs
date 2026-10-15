@@ -9,7 +9,7 @@ use std::time::Duration;
 use ratatoskr_identifiers::{BlobRef, DigestHex, MediaType, NotesConnectionId, NotesFileId};
 use ratatoskr_notes_contracts::{FileChangeKind, FileChanged, VaultPath};
 use ratatoskr_sites::consumer::Durable;
-use support::bus::{TestBus, build_command, event};
+use support::bus::{TestBus, build_command, event, requested_build};
 use support::{Failure, Fixture, SITE};
 use uuid::Uuid;
 
@@ -178,6 +178,51 @@ async fn first_release_needs_an_explicit_request() -> Outcome {
         1,
         "the first release exists"
     );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn transient_failure_is_retried() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+
+    // The notes index is unavailable once; the build is tried again without a new command.
+    fixture.index.fail_next(1);
+    let report = requested_build(&fixture, &bus, Uuid::now_v7()).await?;
+    assert_eq!(
+        report.get("status"),
+        Some(&serde_json::json!("succeeded")),
+        "a transient failure is retried: {report}"
+    );
+    assert_eq!(fixture.release_count().await?, 1, "the release exists");
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn redelivered_command_builds_once() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+    let command = build_command(SITE, fixture.owner, Uuid::now_v7())?;
+
+    bus.publish("cmd.sites.release.build_requested.v1", command.clone())
+        .await?;
+    bus.settled(Durable::ReleaseBuilds).await?;
+    running.started(1).await?;
+    idle(&fixture).await?;
+    // The same command again, as a redelivery after a lost acknowledgement.
+    bus.publish("cmd.sites.release.build_requested.v1", command)
+        .await?;
+    bus.settled(Durable::ReleaseBuilds).await?;
+    idle(&fixture).await?;
+    assert_eq!(running.builds(), 1, "a command is applied once");
 
     running.stop().await;
     bus.cleanup().await?;
