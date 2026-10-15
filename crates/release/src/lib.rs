@@ -7,10 +7,12 @@
 //!
 //! The order is fixed: the text of a note loses its frontmatter and its comments (`source`), is
 //! parsed into one tree (`tree`), passes the privacy filter (`filter`), and only then reaches the
-//! page tree and HTML renderers (`render`) and the link and asset collectors below.
+//! page tree and HTML renderers (`render`) and the link and asset collectors below. The HTML
+//! body then passes the closed allowlist (`sanitise`).
 
 mod filter;
 mod render;
+mod sanitise;
 mod source;
 mod tree;
 
@@ -214,7 +216,7 @@ fn render_note(
             node_type: PageRootType::Root,
             children: render::to_ast(&tree),
         },
-        html: render::to_html(&tree),
+        html: sanitise::sanitise(&render::to_html(&tree)),
         links,
         assets,
         blobs,

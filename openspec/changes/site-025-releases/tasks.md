@@ -15,8 +15,8 @@
 
 ## 4. Sanitised HTML (workspace tasks 5.16, 5.17)
 
-- [ ] 4.1 RED: add `crates/release/tests/sanitise.rs` with the two tests of workspace task 5.16. Confirm that the first fails on the assertion that the HTML holds no `script` element.
-- [ ] 4.2 GREEN: implement the closed HTML allowlist and render plugin query blocks as code. Verify 4.1.
+- [x] 4.1 RED: add `crates/release/tests/sanitise.rs` with the two tests of workspace task 5.16. Confirm that the first fails on the assertion that the HTML holds no `script` element.
+- [x] 4.2 GREEN: implement the closed HTML allowlist and render plugin query blocks as code. Verify 4.1.
 
 ## 5. Release build (workspace tasks 5.18, 5.19)
 

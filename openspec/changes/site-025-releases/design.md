@@ -49,3 +49,12 @@ So a reader never gets a page of another release than the one it fetched.
 
 `PageNode::Link` takes only an `https`, `http` or `mailto` URL. A link to an attachment that the
 release publishes is therefore written as an `embed` of that asset, and the link text is dropped.
+
+### 8. The HTML allowlist is written on the tokenizer of the HTML standard
+
+`ammonia` 4.1 and later depend on `cssparser`, whose licence MPL-2.0 is not in the shared
+`deny.toml`, and `ammonia` 4.0 has open RustSec advisories. So the allowlist is written in this
+repository on `html5ever`'s tokenizer (MIT OR Apache-2.0): a browser's reading of the markup, one
+pass, and only allowlisted tags, attributes and escaped text are written again. It allows no
+foreign content (`svg`, `math`), which is where mutation XSS comes from. A shared licence policy
+change would let a later change replace it with `ammonia`.

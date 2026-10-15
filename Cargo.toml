@@ -44,6 +44,12 @@ axum  = { version = "0.8", default-features = false, features = ["http1", "json"
 # CommonMark with tables, strikethrough, task lists and wikilinks, the version of ratatoskr-notes.
 # The release builder parses each selected note into one tree, and the privacy filter runs on it.
 pulldown-cmark = { version = "0.13.4", default-features = false }
+# The tokenizer of the HTML standard, for the closed element and attribute allowlist of the HTML
+# body of a page (workspace spec site-release-privacy, "Rendered HTML is sanitised"). It reads the
+# markup as a browser does, so a fragment cannot hide an element from the allowlist. Not ammonia:
+# ammonia 4.1 and later depend on cssparser (MPL-2.0, not in deny.toml), and 4.0 has open
+# RustSec advisories.
+html5ever = "0.40"
 
 # ---- note bytes ----
 # The fresh SHA-256 of a note blob before it is used (workspace spec blob-references). RustCrypto,

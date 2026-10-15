@@ -38,5 +38,5 @@ None.
 ## Impact
 
 `crates/publications`, `crates/release`, `services/sites`, `schema.sql`, `fixtures/`. New
-dependencies: `pulldown-cmark` (as in `ratatoskr-notes`), `ammonia` for the HTML allowlist,
+dependencies: `pulldown-cmark` (as in `ratatoskr-notes`), `html5ever` for the HTML allowlist,
 `serde_jcs` for RFC 8785, and `async-nats` for the relay (as in `ratatoskr-notes`).
