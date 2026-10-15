@@ -17,7 +17,7 @@ mod receipt;
 
 use std::path::PathBuf;
 
-use ratatoskr_sites_contracts::{DeployStored, SiteId};
+use ratatoskr_sites_contracts::{CommitSha, DeployActivated, DeployStored, SiteId};
 use ratatoskr_sites_persistence::Database;
 use tokio_util::io::SyncIoBridge;
 
@@ -168,6 +168,26 @@ impl DeployStore {
         .await
         .map_err(|_| DeployError::Storage(std::io::Error::other("the receipt stopped")))??;
         answer(stored)
+    }
+}
+
+impl DeployStore {
+    /// Make the stored deploy of `commit` the current deploy of `site`.
+    ///
+    /// # Errors
+    ///
+    /// [`DeployError`] when the deploy cannot be activated.
+    #[expect(
+        clippy::unused_async,
+        reason = "the stub of task 4.9 activates nothing yet"
+    )]
+    pub async fn activate(
+        &self,
+        site: &SiteId,
+        commit: &CommitSha,
+    ) -> Result<DeployActivated, DeployError> {
+        let _ = (site, commit);
+        Err(DeployError::DeployNotFound)
     }
 }
 
