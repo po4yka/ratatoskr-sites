@@ -1938,6 +1938,7 @@ dependencies = [
  "figment",
  "futures-util",
  "http-body-util",
+ "hyper-util",
  "metrics-exporter-prometheus",
  "percent-encoding",
  "ratatoskr-error-contracts",

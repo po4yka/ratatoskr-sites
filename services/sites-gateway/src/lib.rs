@@ -16,6 +16,7 @@
 pub mod admin;
 pub mod config;
 mod fault;
+mod forward;
 mod serve;
 mod table;
 
@@ -43,6 +44,7 @@ pub struct Gateway {
     config: GatewayConfig,
     table: RwLock<Arc<HostTable>>,
     manifests: serve::Manifests,
+    edge: forward::EdgeClient,
 }
 
 impl Gateway {
@@ -50,7 +52,9 @@ impl Gateway {
     #[must_use]
     pub fn new(config: GatewayConfig) -> Arc<Self> {
         let table = HostTable::read(&config.sites.root);
+        let edge = forward::client(&config.edge);
         Arc::new(Self {
+            edge,
             config,
             table: RwLock::new(Arc::new(table)),
             manifests: serve::Manifests::default(),
@@ -101,7 +105,7 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
 
 /// Select the site of the `Host`, then serve its current deploy.
 async fn handle(State(gateway): State<Arc<Gateway>>, request: Request) -> Response {
-    let (parts, _body) = request.into_parts();
+    let (parts, body) = request.into_parts();
     let host = parts
         .headers
         .get(header::HOST)
@@ -111,6 +115,9 @@ async fn handle(State(gateway): State<Arc<Gateway>>, request: Request) -> Respon
     let Some(site) = gateway.site(host) else {
         return Fault::UnknownHost.into_response();
     };
+    if forward::is_forwarded(parts.uri.path()) {
+        return forward::forward(&gateway, &site, parts, body).await;
+    }
     serve::static_file(&gateway, &site, &parts).await
 }
 

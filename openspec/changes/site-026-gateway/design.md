@@ -95,3 +95,13 @@ writes `about/index.html` for `/about/`, so the gateway resolves a folder path t
 for every path, before the previous deploy and the entry fallback. Only a listed file is served, so
 this widens nothing outside the manifest. The gateway keeps the manifests of the deploys that
 requests resolved, at most 64, because a stored deploy never changes.
+
+### 13. The forward list and its headers
+
+The gateway forwards these routes below `/v1/sites/<site>/` of the site of the host: `content/*`,
+`events`, `sessions`, `releases`, `drafts/*`, `edits`, `conflicts/*`, `library` and
+`knowledge/search` (SITE-025 and SITE-027 site-origin, sign-in and release routes). Management and
+deploy routes are never forwarded from a site origin. The gateway removes the inbound `Host` and
+`Accept-Encoding` too, so Edge never compresses a forwarded answer and an event stream reaches the
+client unchanged. A forwarded answer that sends nothing for one minute, four times Edge's keep-alive
+interval, ends with an error.

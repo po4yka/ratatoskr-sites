@@ -18,6 +18,8 @@ pub(crate) enum Fault {
     PageNotFound,
     /// A static path was asked with another method than `GET` or `HEAD`.
     MethodNotAllowed,
+    /// The `/_r/` path is not an API path of the site of the host.
+    NotForwarded,
     /// Edge or the sites tree cannot be read now.
     Unavailable,
 }
@@ -47,6 +49,12 @@ impl Fault {
                 StatusCode::METHOD_NOT_ALLOWED,
                 "sites.request.method_not_allowed",
                 "The path accepts GET and HEAD only.",
+                false,
+            ),
+            Self::NotForwarded => (
+                StatusCode::NOT_FOUND,
+                "sites.gateway.route_not_forwarded",
+                "The route is not forwarded for this site.",
                 false,
             ),
             Self::Unavailable => (
