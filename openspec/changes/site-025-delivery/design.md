@@ -105,3 +105,19 @@ The content routes come in task 6.2, after the tasks of the manifest and the eff
 tests of tasks 3.1 and 4.1 observe `Servable::serving`, the one absence path that the delivery
 routes use, and `delivery.rs::every_kind_of_absence_is_the_same_answer` shows that the routes use
 it.
+
+### 11. Review corrections (workspace tasks 5.37 to 5.42)
+
+- The servable set is refreshed one site at a time under one lock, held across the read of the
+  database and the write of the set.
+- Each page, asset and search row of a release records the publications that put it there. The
+  delivery serves it only while one of them is in the effective set, and the release route drops the
+  entries of a removed publication. A deleted publication leaves the effective set. The `ETag` of the
+  release, page and search answers is `"<release id>.<16 hex of the SHA-256 of the effective
+  publications>"`.
+- A build that fails for a transient reason keeps its rows and is tried again after 5 s, at most
+  three times; only the last failure is reported. A build command is recorded in the inbox.
+- Every delivery answer carries `X-Content-Type-Options: nosniff`; an HTML, SVG or XML asset is
+  served with `Content-Disposition: attachment`; every refusal and failure of a content route carries
+  `Cache-Control: no-store`.
+- The service serves one owner and does not scope sites by owner.

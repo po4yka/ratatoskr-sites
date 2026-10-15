@@ -3,7 +3,7 @@
   "info": {
     "title": "Ratatoskr Content Delivery API",
     "version": "1.0.0",
-    "description": "The anonymous, read-only API through which a site reads the current release of its publications (workspace spec `site-content-delivery`). Edge serves it in the route class `public`: `GET` and `HEAD` only, no credential, a token bucket for each client and a budget for each site (ADR-0017 of `ratatoskr-platform`). Edge refuses every other method with 405 and a request over a bucket with 429 and `Retry-After`; this service answers the rest. A withdrawal stops all public content within 3600 seconds, also in a shared cache.",
+    "description": "The anonymous, read-only API through which a site reads the current release of its publications (workspace spec `site-content-delivery`). Edge serves it in the route class `public`: `GET` and `HEAD` only, no credential, a token bucket for each client and a budget for each site (ADR-0017 of `ratatoskr-platform`). Edge refuses every other method with 405 and a request over a bucket with 429 and `Retry-After`; this service answers the rest. A withdrawal stops all public content within 3600 seconds, also in a shared cache. The `ETag` of the release, page and search answers changes when the current release changes and when the effective publications of the site change.",
     "license": {
       "name": "BSD-3-Clause",
       "identifier": "BSD-3-Clause"
@@ -32,7 +32,7 @@
       "get": {
         "operationId": "getRelease",
         "summary": "The current release of the site",
-        "description": "The current `sites/release.v1` document: its pages by slug, its assets by SHA-256 and its navigation. Capability `pages.read`.",
+        "description": "The current `sites/release.v1` document: its pages by slug, its assets by SHA-256 and its navigation. It holds only the pages, assets, navigation entries and publication ids of the publications in the effective set of the site, so a publication that the owner removes leaves it at once. Capability `pages.read`.",
         "parameters": [
           {
             "name": "If-None-Match",
@@ -59,6 +59,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -77,6 +83,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -88,12 +100,134 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "getReleaseHead",
+        "summary": "The current release of the site (headers only)",
+        "description": "As `GET`, with the same status and headers and no body.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current release.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found`: the site does not exist, has no approval, its approval was withdrawn, or its effective set does not hold the capability of the route. Every kind of absence has this one answer.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -153,6 +287,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -171,6 +311,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -182,12 +328,134 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "getPageHead",
+        "summary": "One page of the current release (headers only)",
+        "description": "As `GET`, with the same status and headers and no body.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found` as for the release route, or `sites.page_not_found`: the current release has no page with this slug.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -248,6 +516,18 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "`attachment` when the media type is HTML, SVG or XML, so a browser never shows such an asset as a document of the delivery origin.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -272,6 +552,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -283,12 +569,140 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "getAssetHead",
+        "summary": "One asset of the current release (headers only)",
+        "description": "As `GET`, with the same status and headers and no body.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The asset bytes.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=3600`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "`attachment` when the media type is HTML, SVG or XML, so a browser never shows such an asset as a document of the delivery origin.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found` as for the release route, or `sites.asset_not_found`: the current release has no asset with this digest.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -373,6 +787,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -391,6 +811,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -399,6 +825,12 @@
             "headers": {
               "Cache-Control": {
                 "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
                 "schema": {
                   "type": "string"
                 }
@@ -420,12 +852,185 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "searchReleaseHead",
+        "summary": "Search the current release (headers only)",
+        "description": "As `GET`, with the same status and headers and no body.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "The query: 1 to 256 Unicode scalar values.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1 to 50 results.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "The number of results to skip.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The results.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`sites.request.invalid`: a parameter is outside its bounds. No search runs.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found`: the site does not exist, has no approval, its approval was withdrawn, or its effective set does not hold the capability of the route. Every kind of absence has this one answer.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sites.service_unavailable`: the service could not read the release now; repeat the request later.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`, on every answer.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }

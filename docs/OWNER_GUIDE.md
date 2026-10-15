@@ -8,6 +8,14 @@ The rules come from the workspace change `add-site-publications` (SITE-025): the
 `site-publications`, `site-release-privacy`, `site-manifest` and `site-content-delivery`. If this
 guide and a spec do not agree, the spec is correct.
 
+## One owner
+
+The sites service serves one owner: the owner of the Ratatoskr installation. Edge lets only a
+primary session with the `platform.owner` grant reach the management routes, and the service does
+not scope sites by owner. Every management request can read and change every site. The service
+does not check that a publication names a vault connection of the same owner; the notes index route
+does that when it gives the files of a connection.
+
 ## Terms
 
 | Term | Meaning |
@@ -145,7 +153,9 @@ So:
 - a removed capability or publication stops at once, with no approval;
 - with no approval, or after a withdrawal, the set is empty and the site serves nothing.
 
-A release holds only the publications of the effective set.
+A release holds only the publications of the effective set. When you remove a publication from the
+manifest, or delete it in the web client, its pages, its assets and its search hits stop at once,
+with no build; the release document no longer lists them.
 
 ## What a visitor reads
 
@@ -163,6 +173,12 @@ withdrawn site and a capability outside the effective set all get the same answe
 `sites.site_not_found`. A visitor cannot tell them apart.
 
 Search finds only the pages of the current release. A query has 1 to 256 characters.
+
+An asset whose media type is HTML, SVG or XML is served as a download, so that a browser never runs
+its script on the origin of the site.
+
+A build that fails for a passing reason, for example because the notes service does not answer, is
+tried again after 5 seconds, at most three times, before it is reported as failed.
 
 ## Cache bounds after a withdrawal
 
