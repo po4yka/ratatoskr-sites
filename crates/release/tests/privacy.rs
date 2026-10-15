@@ -380,3 +380,42 @@ fn backlink_from_unselected_page_is_dropped_on_rebuild() -> Outcome {
     );
     Ok(())
 }
+
+#[test]
+fn asset_metadata_comes_from_the_used_attachment() -> Outcome {
+    let mut files = index()?;
+    let scan = files
+        .iter()
+        .find(|file| file.path == "attachments/2026/passport-scan-blurred.png")
+        .ok_or("the fixture holds the scan")?
+        .clone();
+    // Another attachment with the same bytes and another media type, which no page uses.
+    let mut twin = scan.clone();
+    "zz/twin.bin".clone_into(&mut twin.path);
+    twin.revision.media_type = ratatoskr_identifiers::MediaType::parse("application/octet-stream")?;
+    files.push(twin);
+
+    let built = build(&files)?;
+    let asset = built
+        .release
+        .assets
+        .iter()
+        .find(|asset| asset.sha256 == scan.revision.digest.hex)
+        .ok_or("the release publishes the scan")?;
+    assert_eq!(
+        asset.media_type.as_str(),
+        "image/png",
+        "the media type is the one of the attachment that the page uses"
+    );
+    assert_eq!(asset.size_bytes, scan.revision.length_bytes);
+    assert_eq!(
+        built
+            .assets
+            .iter()
+            .map(|blob| blob.media_type.as_str())
+            .collect::<Vec<_>>(),
+        ["image/png"],
+        "the blob that the build copies is the used attachment"
+    );
+    Ok(())
+}

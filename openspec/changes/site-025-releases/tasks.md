@@ -41,3 +41,5 @@
 - [x] 8.4 GREEN (5.21b): compare folders and paths by the path key of `ratatoskr-notes` (NFC, then Unicode default case folding), in the selection and in the attachments that a publication may publish. Verify 8.3.
 - [x] 8.5 RED (5.21c): add `release_build.rs::long_failure_detail_is_still_reported` (a failure detail over 1024 characters is still reported, with a safe message) and `release_build.rs::report_failure_keeps_the_build_error` (an outbox that cannot take the report does not replace the class of the build). Confirm that the first fails on the report count and the second on the class.
 - [x] 8.6 GREEN (5.21c): cut the message of a report to a safe message, and log a failed report instead of returning it. Verify 8.5.
+- [ ] 8.7 RED (5.21d): add `privacy.rs::asset_metadata_comes_from_the_used_attachment`, with a second attachment of the same bytes and another media type that no page uses. Confirm that the media-type assertion fails because the release takes the metadata of the other attachment.
+- [ ] 8.8 GREEN (5.21d): take the media type, the size and the blob of an asset from the attachment that the filter resolved for the page. Verify 8.7.
