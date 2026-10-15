@@ -20,8 +20,8 @@
 
 ## 5. The unit names the read group (review of workspace task 5.7)
 
-- [ ] 5.1 RED: add `services/sites/tests/deploy_files.rs::unit_names_the_notes_blob_group`, which asserts that `SupplementaryGroups=` of `deploy/systemd/ratatoskr-sites.service` names `ratatoskr-notes-blobs` and `ratatoskr`. Run it and confirm that the group assertion fails because the unit names only `ratatoskr`.
-- [ ] 5.2 GREEN: name `ratatoskr-notes-blobs` in `SupplementaryGroups=`, as the Knowledge unit does. Verify 5.1.
+- [x] 5.1 RED: add `services/sites/tests/deploy_files.rs::unit_names_the_notes_blob_group`, which asserts that `SupplementaryGroups=` of `deploy/systemd/ratatoskr-sites.service` names `ratatoskr-notes-blobs` and `ratatoskr`. Run it and confirm that the group assertion fails because the unit names only `ratatoskr`.
+- [x] 5.2 GREEN: name `ratatoskr-notes-blobs` in `SupplementaryGroups=`, as the Knowledge unit does. Verify 5.1.
 
 ## 6. Pin the other classes of the note blob reader (review of workspace task 5.9)
 
