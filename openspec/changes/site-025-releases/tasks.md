@@ -53,3 +53,8 @@
 - [x] 8.16 RED (5.21i): add `crates/release/tests/allowlist.rs` with `attributes_follow_the_allowlist` (a table of cases for class values, heading ids, image sources and link targets) and `sanitising_twice_changes_nothing` (500 fixed random fragments), and `sanitise.rs::heading_ids_are_lower_case_ascii`. Confirm that the table fails on the first unknown class and the heading test on the id `café-au-lait!`. The idempotence property passes already after 5.21f.
 - [x] 8.17 GREEN (5.21i): keep only the classes of the renderer (`callout`, `callout-title`, `callout-content`, one `language-<lang>` with a lang of at most 32 safe characters), heading ids of `[a-z0-9-]` made by one function for the renderer and the allowlist, and an image source that is `assets/<sha256>` or `https:`. Verify 8.16.
 - [x] 8.18 (5.21j): document in README.md the `Content-Security-Policy` `img-src` and the `Referrer-Policy` that a site sets, and that the allowlist removes hiding attributes so that hidden text becomes visible. No test: documentation.
+
+## 9. A self-closed foreign element (review follow-up of workspace task 5.21f)
+
+- [x] 9.1 RED: add `sanitise.rs::self_closed_foreign_element_is_empty`: `<svg/>` and `<math/>`, also inside an element of the same name, are empty, and the text after them stays; the content of an `svg` that is not self-closed is still removed. Confirm that the first assertion fails because the allowlist skips the rest of the page after `<svg/>`.
+- [ ] 9.2 GREEN: a browser honours the self-closing flag of `svg` and `math`, so the allowlist treats a self-closed `svg` or `math` as empty, and does not count it as a nested start inside a removed element. Verify 9.1.

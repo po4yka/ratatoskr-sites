@@ -270,3 +270,25 @@ fn heading_ids_are_lower_case_ascii() -> Outcome {
     );
     Ok(())
 }
+
+#[test]
+fn self_closed_foreign_element_is_empty() {
+    for payload in [
+        "<p>before</p><svg/><p>after</p>",
+        "<p>before</p><math/><p>after</p>",
+        "<p>before</p><svg><svg/></svg><p>after</p>",
+        "<p>before</p><math><math/></math><p>after</p>",
+    ] {
+        let clean = sanitise(payload);
+        assert_eq!(
+            clean, "<p>before</p><p>after</p>",
+            "a browser closes a self-closed svg or math at once, so the text after it stays: \
+             {payload}"
+        );
+    }
+    let hidden = sanitise("<svg><script>alert(1)</script><svg/>inside</svg>after");
+    assert_eq!(
+        hidden, "after",
+        "the content of an svg that is not self-closed is removed"
+    );
+}
