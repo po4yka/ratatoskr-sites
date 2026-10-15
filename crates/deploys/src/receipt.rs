@@ -68,6 +68,28 @@ impl Drop for Staging {
     }
 }
 
+/// Remove every receipt directory under `<root>/<site>/.staging/`, and give back how many.
+pub(crate) fn remove_stale(root: &Path) -> Result<usize, DeployError> {
+    let sites = match std::fs::read_dir(root) {
+        Ok(sites) => sites,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(DeployError::Storage(error)),
+    };
+    let mut removed = 0;
+    for site in sites {
+        let staging = site.map_err(DeployError::Storage)?.path().join(STAGING);
+        let Ok(receipts) = std::fs::read_dir(&staging) else {
+            continue;
+        };
+        for receipt in receipts {
+            let receipt = receipt.map_err(DeployError::Storage)?.path();
+            std::fs::remove_dir_all(&receipt).map_err(DeployError::Storage)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 /// Receive the archive `reader` for `site` into `site_dir`, at most `max_bytes` of files.
 pub(crate) fn receive(
     site_dir: &Path,

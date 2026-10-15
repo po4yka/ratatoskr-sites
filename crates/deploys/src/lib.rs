@@ -223,13 +223,11 @@ impl DeployStore {
     /// # Errors
     ///
     /// [`DeployError::Storage`] when the tree cannot be read.
-    #[expect(
-        clippy::unused_async,
-        reason = "the stub of task 8.12 removes nothing yet"
-    )]
     pub async fn remove_stale_staging(&self) -> Result<usize, DeployError> {
-        let _ = &self.root;
-        Ok(0)
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || receipt::remove_stale(&root))
+            .await
+            .map_err(|_| DeployError::Storage(std::io::Error::other("the cleanup stopped")))?
     }
 }
 

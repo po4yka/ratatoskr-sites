@@ -173,6 +173,11 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
             retention: config.deploys.retention,
         },
     );
+    match deploys.remove_stale_staging().await {
+        Ok(0) => {}
+        Ok(removed) => tracing::info!(removed, "stale receipts of the sites tree are removed"),
+        Err(error) => tracing::warn!(%error, "stale receipts of the sites tree cannot be removed"),
+    }
     let api_state = ApiState::load(
         &shared,
         SitesBlobs::new(&config.blobs.root),

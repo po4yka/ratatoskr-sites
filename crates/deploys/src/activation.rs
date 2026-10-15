@@ -42,6 +42,10 @@ pub(crate) fn activate(
     if let Some(before) = &before {
         switch(site_dir, PREVIOUS, &PathBuf::from(BUNDLES).join(before))?;
     }
+    // The two renames are durable only when the site directory is on disk.
+    if let Err(error) = std::fs::File::open(site_dir).and_then(|dir| dir.sync_all()) {
+        tracing::warn!(%error, "the site directory could not be synced");
+    }
     retain(site_dir, retention, last_activation)?;
     Ok(before)
 }
