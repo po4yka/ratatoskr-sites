@@ -99,3 +99,13 @@ its current configuration still selects it: a build from the release can only sh
 - [x] 14.5 RED (5.71): add `release_sources.rs::every_source_row_names_its_publications` (no row without publications; the schema refuses one) and `release_sources.rs::stored_frontmatter_holds_no_publish` (also when the allowlist names `publish`). Confirm that each fails on its assertion.
 - [x] 14.6 GREEN (5.72): a CHECK that `publication_ids` is not empty, and no `publish` key in the stored frontmatter. Verify 14.5.
 - [x] 14.7 (5.73) Document that the stored frontmatter keys are the union of the allowlists of the selecting publications and that a page renders only the current allowlist of the publication that renders it. No test: documentation.
+
+## 15. Sixth review (workspace tasks 5.74 to 5.80)
+
+- [x] 15.1 RED (5.74): add `release_narrowing.rs::widened_publication_gains_no_attachment_from_the_release` (a PUT that widens and narrows a manual publication) and `release_narrowing.rs::file_change_build_gives_a_manual_publication_no_attachment` (an automatic and a manual publication): the manual publication, read from the release, gains no attachment that it did not publish, and the image stops with the publication that published it. Confirm that the publication assertion fails because the attachment gets every publication that does not exclude it.
+- [ ] 15.2 GREEN (5.75): an attachment names only the publications that have it among their own files and may publish it, by one function that the release builder shares. Verify 15.1.
+- [ ] 15.3 RED (5.76): add `release_narrowing.rs::non_ascii_tag_survives_a_build_from_the_release` (`#Öffentlich`). Confirm that the slug assertion fails because the stored tag is lower case and the selection compares ASCII case only.
+- [ ] 15.4 GREEN (5.77): store a tag in the form that the selection compares, through one normaliser that the selection and the storage share. Verify 15.3.
+- [ ] 15.5 RED (5.78): add `release_narrowing.rs::unchanged_document_rewrites_its_publications`: when a narrowing leaves the release document unchanged, the sources, pages and assets lose the publication, and after `DELETE` of the other one the page answers 404. Confirm that the publication assertion fails because a build that makes the current release again stores nothing.
+- [ ] 15.6 GREEN (5.79): a build whose release id is the current one rewrites the publications of the sources, pages, assets and search rows, and the worker refreshes the servable set after it. Verify 15.5.
+- [ ] 15.7 (5.80): pin tests: the page never renders `publish` (`release_sources.rs::page_frontmatter_holds_no_publish`), and the refused source row fails with SQLSTATE 23514. No failing test first: both pin behaviour that exists.
