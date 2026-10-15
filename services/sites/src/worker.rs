@@ -206,12 +206,12 @@ impl<B: SiteBuilds> BuildWorker<B> {
             let mut taken: Vec<Uuid> = rows.iter().map(|row| row.0).collect();
             let mut again = false;
             match self.builds.build(&job).await {
-                Ok(outcome) if outcome.new_release => {
+                // Also a build that made the current release again: its provenance can have changed.
+                Ok(_) => {
                     if let Err(error) = self.servable.refresh(&self.database, site_id).await {
                         tracing::warn!(%error, site_id, "the servable sites could not be read");
                     }
                 }
-                Ok(_) => {}
                 Err(error) if error.retryable() => {
                     taken = rows
                         .iter()

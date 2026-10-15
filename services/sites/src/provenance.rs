@@ -255,6 +255,51 @@ impl Provenance {
         Ok(())
     }
 
+    /// Write again the provenance of the release `release_id`, which a build made again: its
+    /// sources, and the publications of its pages, search rows and assets.
+    ///
+    /// # Errors
+    ///
+    /// The query error of a row that cannot be written.
+    pub(crate) async fn rewrite(
+        &self,
+        connection: &mut PgConnection,
+        release_id: &str,
+        built: &Built,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("delete from sites.release_sources where release_id = $1")
+            .bind(release_id)
+            .execute(&mut *connection)
+            .await?;
+        self.write(connection, release_id).await?;
+        for page in &built.pages {
+            let slug = page.page.slug.as_str();
+            for table in ["release_pages", "release_search"] {
+                sqlx::query(&format!(
+                    "update sites.{table} set publication_ids = $3 \
+                     where release_id = $1 and slug = $2"
+                ))
+                .bind(release_id)
+                .bind(slug)
+                .bind(self.page(slug))
+                .execute(&mut *connection)
+                .await?;
+            }
+        }
+        for (digest, publications) in self.assets(built) {
+            sqlx::query(
+                "update sites.release_assets set publication_ids = $3 \
+                 where release_id = $1 and digest = $2",
+            )
+            .bind(release_id)
+            .bind(digest)
+            .bind(publications)
+            .execute(&mut *connection)
+            .await?;
+        }
+        Ok(())
+    }
+
     /// The publications of the page `slug`.
     pub(crate) fn page(&self, slug: &str) -> &[String] {
         self.pages.get(slug).map_or(&[], Vec::as_slice)

@@ -460,6 +460,19 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Database)?;
         if current.as_deref() == Some(release_id.as_str()) {
+            // The same document can come from other publications: the provenance of its sources,
+            // pages, assets and search rows is written again, so a removed publication leaves it.
+            let mut transaction = self
+                .database
+                .pool()
+                .begin()
+                .await
+                .map_err(BuildFailure::Database)?;
+            provenance
+                .rewrite(&mut transaction, &release_id, built)
+                .await
+                .map_err(BuildFailure::Database)?;
+            transaction.commit().await.map_err(BuildFailure::Database)?;
             return Ok(BuildOutcome {
                 release_id,
                 new_release: false,
