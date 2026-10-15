@@ -144,3 +144,33 @@ async fn build_reports_its_release_id() -> Outcome {
     );
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn blob_over_the_bound_fails_with_blob_length() -> Outcome {
+    let fixture = Fixture::new().await?;
+    // The builder of the fixture reads without a bound of its own; the service applies its bound.
+    let over = vec![0_u8; usize::try_from(support::MAX_NOTE_BYTES + 1)?];
+    fixture.replace(
+        "attachments/2026/passport-scan-blurred.png",
+        &over,
+        "image/png",
+    )?;
+
+    let built = fixture.builder().build(&request(None)).await;
+    assert_eq!(
+        built
+            .as_ref()
+            .map_err(ratatoskr_sites::release_build::BuildFailure::class)
+            .err()
+            .as_deref(),
+        Some("sites.blob_length"),
+        "a blob of more than 64 MiB fails the build before it is read: {:?}",
+        built.map(|outcome| outcome.release_id)
+    );
+    assert_eq!(
+        fixture.release_count().await?,
+        0,
+        "the build makes no release"
+    );
+    fixture.cleanup().await
+}

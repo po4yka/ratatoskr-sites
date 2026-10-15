@@ -21,7 +21,8 @@ pub(crate) const SITE: &str = "site-r";
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/privacy-vault");
 
-/// The bound of a note read in a build: the default largest file of `ratatoskr-notes`.
+/// The bound of a note read in a build: the default largest file of `ratatoskr-notes`, written
+/// here apart from the service.
 pub(crate) const MAX_NOTE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// A stub of the notes internal index route: one connection and its files.
@@ -121,7 +122,7 @@ impl Fixture {
         ReleaseBuilder::new(
             self.database.database.clone(),
             self.index.clone(),
-            NotesBlobReader::new(self.notes_root.path()).with_max_bytes(MAX_NOTE_BYTES),
+            NotesBlobReader::new(self.notes_root.path()),
             self.sites_root.path().to_path_buf(),
         )
     }
@@ -141,6 +142,31 @@ impl Fixture {
         store(
             self.notes_root.path(),
             text.as_bytes(),
+            file.revision.digest.hex.as_str(),
+        )
+    }
+
+    /// Give the file `path` the bytes `bytes` with the media type `media_type`, as a new revision
+    /// in notes.
+    pub(crate) fn replace(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        media_type: &str,
+    ) -> Result<(), Failure> {
+        let mut files = self
+            .index
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?;
+        let file = files
+            .iter_mut()
+            .find(|file| file.path == path)
+            .ok_or("the fixture holds the file")?;
+        file.revision = revision_of(bytes, media_type)?;
+        store(
+            self.notes_root.path(),
+            bytes,
             file.revision.digest.hex.as_str(),
         )
     }

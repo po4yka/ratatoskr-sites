@@ -32,3 +32,8 @@
 
 - [x] 7.1 RED: add `services/sites/tests/notes_blob_read.rs::reference_over_the_bound_reads_nothing`, which gives a reader with a bound of 4 bytes a reference of 7 bytes and a root that does not exist, and asserts `blob_length`. Confirm that the class assertion fails because the reader ignores the bound.
 - [x] 7.2 GREEN: refuse a reference over the bound before the root is touched. The build of task 5.2 reads every note and attachment with the bound of 64 MiB (local design 5). Verify 7.1.
+
+## 8. Review corrections (workspace tasks 5.21a to 5.21j)
+
+- [ ] 8.1 RED (5.21a): add `services/sites/tests/release_build.rs::blob_over_the_bound_fails_with_blob_length`, which builds through a `ReleaseBuilder` whose reader has no bound of its own, with an attachment of 64 MiB and one byte. Confirm that the class assertion fails because the build reads it and succeeds.
+- [ ] 8.2 GREEN (5.21a): `ReleaseBuilder::new` applies the production bound of 64 MiB itself. Verify 8.1.
