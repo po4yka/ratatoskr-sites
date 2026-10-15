@@ -148,3 +148,46 @@ async fn deleted_and_narrowed_publications_request_a_build() -> Outcome {
     );
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn removal_build_keeps_the_released_text() -> Outcome {
+    let fixture = two_publications().await?;
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+    let api = fixture.api_of(&running.shared).await?;
+    let home = format!("/v1/sites/{SITE}/content/pages/home");
+    let first = fixture.release_count().await?;
+
+    // The owner changes a note of the manual publication and does not release it.
+    fixture.change(
+        "home.md",
+        "---\ntitle: Home\npublish: true\n---\n# Home\n\nA zebrafish that the owner did not release.\n",
+    )?;
+    let narrower = TestManifest::of("r.example.test", &["pub-r"], &CAPABILITIES);
+    assert_eq!(
+        submit(&api, fixture.owner, &narrower).await?.status,
+        StatusCode::OK
+    );
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if fixture.release_count().await? > first && requests(&fixture).await? == 0 {
+                return Ok::<(), Failure>(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .map_err(|_| "the removal build made no release")??;
+
+    let page = call(&api, anonymous(Method::GET, &home)?).await?;
+    assert_eq!(page.status, StatusCode::OK);
+    let text = String::from_utf8_lossy(&page.body);
+    assert!(
+        text.contains("Start here") && !text.contains("zebrafish"),
+        "the removal release holds the released text of the changed note: {text}"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}

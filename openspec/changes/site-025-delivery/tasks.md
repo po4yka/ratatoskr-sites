@@ -61,3 +61,8 @@
 - [x] 10.5 RED (5.48): add `services/sites/tests/notes_index_http.rs` against a stub HTTP server: `files_of_a_connection_are_read`, `unknown_connection_is_not_found`, `slow_index_is_unavailable` and `oversized_index_is_unavailable`. Confirm that the first fails because the HTTP index is a stub that reads nothing.
 - [x] 10.6 GREEN (5.49): implement `HttpNotesIndex` over `GET /internal/connections/{connection}/files` with a timeout and a body bound, `RATATOSKR__NOTES__BASE_URL` (default `http://127.0.0.1:8099`), the class `sites.connection_not_found` for a 404, and make it the production index. Verify 10.5.
 - [x] 10.7 State in `docs/OWNER_GUIDE.md` and the local design that one owner owns every vault connection and that neither service checks the owner of a connection. No test: documentation.
+
+## 11. A removal build releases no new content (workspace tasks 5.51, 5.52)
+
+- [x] 11.1 RED (5.51): add `removal_build.rs::removal_build_keeps_the_released_text`: in the release mode `manual`, the owner changes a note after the release and removes another publication; the removal release holds the released text of the changed note. Confirm that the text assertion fails because the removal build reads the notes index as it is now.
+- [ ] 11.2 GREEN (5.52): store in `sites.release_sources` the indexed file (with its revision) of each note and each attachment that a release publishes, and build a release that only removal requests asked for from that snapshot of the current release, minus the removed publications, without the notes index. Verify 11.1.
