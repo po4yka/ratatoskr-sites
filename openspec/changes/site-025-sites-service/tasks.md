@@ -1,7 +1,7 @@
 ## 1. Deployment profile (workspace tasks 5.2, 5.3)
 
-- [ ] 1.1 RED: add `services/sites/tests/deployment_profile.rs::shipped_example_enables_the_flow`, which loads `deploy/systemd/sites.conf.example` through the configuration loader and asserts `RATATOSKR__API__LISTEN_ADDRESS=127.0.0.1:8100`, the operator listener `127.0.0.1:9472`, `RATATOSKR__BUS__NKEY_SEED_PATH=/etc/ratatoskr/sites.nkey` and the inbox prefix `_INBOX_sites`. Run it and confirm that the listen-address assertion fails because the example does not set the key.
-- [ ] 1.2 GREEN: complete the example and the configuration loader. Verify 1.1.
+- [x] 1.1 RED: add `services/sites/tests/deployment_profile.rs::shipped_example_enables_the_flow`, which loads `deploy/systemd/sites.conf.example` through the configuration loader and asserts `RATATOSKR__API__LISTEN_ADDRESS=127.0.0.1:8100`, the operator listener `127.0.0.1:9472`, `RATATOSKR__BUS__NKEY_SEED_PATH=/etc/ratatoskr/sites.nkey` and the inbox prefix `_INBOX_sites`. Run it and confirm that the listen-address assertion fails because the example does not set the key.
+- [x] 1.2 GREEN: complete the example and the configuration loader. Verify 1.1.
 
 ## 2. Database role (workspace tasks 5.4, 5.5)
 
