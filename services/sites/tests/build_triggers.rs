@@ -228,3 +228,49 @@ async fn redelivered_command_builds_once() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn each_request_counts_its_own_attempts() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let bus = TestBus::new().await?;
+    // A file change that failed twice, and a new command that joins it.
+    let operation = Uuid::now_v7();
+    sqlx::query(
+        "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
+         requested_at, attempts) values ($1, $2, 'file_change', null, now(), 2), \
+         ($3, $2, 'command', $4, now(), 0)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(SITE)
+    .bind(Uuid::now_v7())
+    .bind(operation)
+    .execute(fixture.database.pool())
+    .await?;
+    fixture.index.fail_next(1);
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+
+    let report = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let left: i64 = sqlx::query_scalar("select count(*) from sites.build_requests")
+                .fetch_one(fixture.database.pool())
+                .await?;
+            if let Some(report) = support::bus::report_of(&fixture, operation).await?
+                && left == 0
+            {
+                return Ok::<_, Failure>(report);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .map_err(|_| "the command was never reported")??;
+    assert_eq!(
+        report.get("status"),
+        Some(&serde_json::json!("succeeded")),
+        "the new command is tried again, not failed with the attempts of another request: {report}"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}

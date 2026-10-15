@@ -53,3 +53,54 @@ async fn withdrawal_is_not_overwritten_by_a_stale_refresh() -> Outcome {
     );
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn delete_retry_refreshes_the_servable_sites() -> Outcome {
+    use axum::http::{Method, StatusCode};
+    use support::http::{anonymous, call, owner};
+
+    let fixture = Fixture::new().await?;
+    sqlx::query(
+        "insert into sites.publications (site_id, publication_id, connection_id, mode, \
+         included_folders, created_at) values ($1, 'pub-s', $2, 'all', '{private}', now())",
+    )
+    .bind(SITE)
+    .bind(fixture.index.connection())
+    .execute(fixture.database.pool())
+    .await?;
+    let both = support::bus::TestManifest::of(
+        "r.example.test",
+        &["pub-r", "pub-s"],
+        &["pages.read", "assets.read", "search.publication"],
+    );
+    fixture.approve_directly(&both).await?;
+    fixture.builder().build(&request(None)).await?;
+    let api = fixture.api().await?;
+    let page = format!("/v1/sites/{SITE}/content/pages/private/zq7plannote");
+    assert_eq!(
+        call(&api, anonymous(Method::GET, &page)?).await?.status,
+        StatusCode::OK
+    );
+
+    // A first DELETE removed the row, and its refresh failed; the owner sends it again.
+    sqlx::query("delete from sites.publications where publication_id = 'pub-s'")
+        .execute(fixture.database.pool())
+        .await?;
+    let retry = call(
+        &api,
+        owner(
+            Method::DELETE,
+            &format!("/v1/sites/{SITE}/publications/pub-s"),
+            fixture.owner,
+            Vec::new(),
+        )?,
+    )
+    .await?;
+    assert_eq!(retry.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        call(&api, anonymous(Method::GET, &page)?).await?.status,
+        StatusCode::NOT_FOUND,
+        "the retry refreshes the servable sites, so the page stops"
+    );
+    fixture.cleanup().await
+}
