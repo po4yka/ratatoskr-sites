@@ -17,21 +17,35 @@ pub struct Effective {
     pub hostname: Option<String>,
 }
 
-/// The effective set of `site_id`: empty without an approval or after a withdrawal.
+/// The effective set of `site_id`: the capabilities of the last approved manifest that the active
+/// manifest also declares, the publications that both name, and the approved hostname. Without an
+/// approval, or after a withdrawal, it is empty. An addition takes effect only after an approval; a
+/// removal stops at once.
 ///
 /// # Errors
 ///
 /// The query error when the rows cannot be read.
 pub async fn effective_set(database: &Database, site_id: &str) -> Result<Effective, sqlx::Error> {
-    let row: Option<(String, Option<Vec<u8>>)> = sqlx::query_as(
-        "select a.state, m.manifest from sites.approval_projection a \
-         left join sites.site_manifests m on m.site_id = a.site_id and m.is_active \
+    type Row = (
+        String,
+        Vec<String>,
+        String,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+    );
+    let row: Option<Row> = sqlx::query_as(
+        "select a.state, a.capabilities, a.hostname, active.manifest, approved.manifest \
+         from sites.approval_projection a \
+         left join sites.site_manifests active \
+         on active.site_id = a.site_id and active.is_active \
+         left join sites.site_manifests approved \
+         on approved.site_id = a.site_id and approved.digest = a.approved_digest \
          where a.site_id = $1",
     )
     .bind(site_id)
     .fetch_optional(database.pool())
     .await?;
-    let Some((state, Some(active))) = row else {
+    let Some((state, approved_capabilities, hostname, Some(active), approved)) = row else {
         return Ok(Effective::default());
     };
     if state != "approved" {
@@ -40,13 +54,36 @@ pub async fn effective_set(database: &Database, site_id: &str) -> Result<Effecti
     let Ok(active) = ratatoskr_sites_manifest::parse(&active) else {
         return Ok(Effective::default());
     };
+    let capabilities = active
+        .capabilities
+        .into_iter()
+        .filter(|capability| {
+            approved_capabilities
+                .iter()
+                .any(|approved| approved == capability.as_str())
+        })
+        .collect();
+    // The approval event names the digest; the publications come from the bytes that this service
+    // stored under it. An approval of a digest that was never submitted here names none.
+    let approved_publications: BTreeSet<String> = approved
+        .and_then(|bytes| ratatoskr_sites_manifest::parse(&bytes).ok())
+        .map(|manifest| {
+            manifest
+                .publications
+                .iter()
+                .map(|publication| publication.as_str().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let publications = active
+        .publications
+        .iter()
+        .map(|publication| publication.as_str().to_owned())
+        .filter(|publication| approved_publications.contains(publication))
+        .collect();
     Ok(Effective {
-        capabilities: active.capabilities.into_iter().collect(),
-        publications: active
-            .publications
-            .iter()
-            .map(|publication| publication.as_str().to_owned())
-            .collect(),
-        hostname: Some(active.hostname.as_str().to_owned()),
+        capabilities,
+        publications,
+        hostname: Some(hostname),
     })
 }

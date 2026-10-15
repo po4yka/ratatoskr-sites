@@ -120,7 +120,7 @@ async fn new_hostname_and_publication_wait_for_approval() -> Outcome {
     let publications: Vec<&str> = release
         .publication_ids
         .iter()
-        .map(|publication| publication.as_str())
+        .map(ratatoskr_sites_contracts::PublicationId::as_str)
         .collect();
     assert_eq!(
         publications,

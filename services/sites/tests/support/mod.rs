@@ -87,8 +87,45 @@ fn store(root: &Path, bytes: &[u8], hex: &str) -> Result<(), Failure> {
 
 impl Fixture {
     /// A site `site-r` with one publication of the fixture vault in the mode `all`, which excludes
-    /// `private/`.
+    /// `private/`, and an approved manifest that names it ([`Fixture::approved_manifest`]). The
+    /// approval is older than any test event, so an approval event of a test replaces it.
     pub(crate) async fn new() -> Result<Self, Failure> {
+        let fixture = Self::unapproved().await?;
+        let manifest = Self::approved_manifest();
+        sqlx::query(
+            "insert into sites.site_manifests (site_id, digest, manifest, submitted_at, \
+             is_active) values ($1, $2, $3, now(), true)",
+        )
+        .bind(SITE)
+        .bind(manifest.digest())
+        .bind(manifest.bytes())
+        .execute(fixture.database.pool())
+        .await?;
+        sqlx::query(
+            "insert into sites.approval_projection (site_id, approved_digest, state, \
+             capabilities, hostname, changed_at) values ($1, $2, 'approved', $3, $4, \
+             '-infinity')",
+        )
+        .bind(SITE)
+        .bind(manifest.digest())
+        .bind(&manifest.capabilities)
+        .bind(&manifest.hostname)
+        .execute(fixture.database.pool())
+        .await?;
+        Ok(fixture)
+    }
+
+    /// The manifest that [`Fixture::new`] submits and approves.
+    pub(crate) fn approved_manifest() -> bus::TestManifest {
+        bus::TestManifest::of(
+            "r.example.test",
+            &["pub-r"],
+            &["pages.read", "assets.read", "search.publication"],
+        )
+    }
+
+    /// As [`Fixture::new`], with no manifest and no approval.
+    pub(crate) async fn unapproved() -> Result<Self, Failure> {
         let database = TestDatabase::create().await?;
         let notes_root = tempfile::tempdir()?;
         let sites_root = tempfile::tempdir()?;

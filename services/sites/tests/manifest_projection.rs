@@ -49,7 +49,7 @@ async fn approval_state(router: &axum::Router, user: Uuid) -> Result<serde_json:
 
 #[tokio::test]
 async fn submitted_manifest_alone_serves_nothing() -> Outcome {
-    let fixture = Fixture::new().await?;
+    let fixture = Fixture::unapproved().await?;
     let bus = TestBus::new().await?;
     let running = fixture.start(&bus, usize::MAX >> 4).await?;
     let api = fixture.api_of(&running.shared).await?;

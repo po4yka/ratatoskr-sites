@@ -15,6 +15,7 @@ use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, Publica
 use ratatoskr_sites_release::{Built, PublicationInput, SiteInput, build_release, selected_notes};
 use uuid::Uuid;
 
+use crate::effective::effective_set;
 use crate::events::{self, BuildReport};
 use crate::notes_blobs::{NotesBlobError, NotesBlobReader};
 use crate::notes_index::NotesIndex;
@@ -74,7 +75,7 @@ pub enum BuildFailure {
     /// A publication that the build reads is suspended: its vault connection was removed.
     #[error("a publication of the site is suspended")]
     PublicationSuspended,
-    /// The build reads no publication.
+    /// The build reads no publication: the effective set of the site names none that exists.
     #[error("the build reads no publication of the site")]
     PublicationNotFound,
     /// A stored publication does not satisfy the contract.
@@ -259,6 +260,15 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                     }
                 },
             )
+            .collect();
+        // Only the publications of the effective set enter a release (workspace spec
+        // `site-manifest`): an added publication waits for an approval.
+        let effective = effective_set(&self.database, site_id)
+            .await
+            .map_err(BuildFailure::Database)?;
+        let rows: Vec<PublicationRow> = rows
+            .into_iter()
+            .filter(|row| effective.publications.contains(&row.publication_id))
             .collect();
         if rows.is_empty() {
             return Err(BuildFailure::PublicationNotFound);
