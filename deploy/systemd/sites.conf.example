@@ -14,6 +14,10 @@ RATATOSKR__DATABASE__URL=postgres://ratatoskr_sites:CHANGE-ME@127.0.0.1:5432/rat
 
 RATATOSKR__TELEMETRY__LOG_FORMAT=json
 
+# The notes domain listener, loopback only. The build reads the index of each vault connection from
+# GET /internal/connections/{connection}/files there.
+RATATOSKR__NOTES__BASE_URL=http://127.0.0.1:8099
+
 # The NATS server and the seed of the SITES identity (deploy/nats/identity.conf). Every connection
 # uses the inbox prefix _INBOX_sites, the only one that the identity may subscribe to. The seed file
 # is mode 0400, owner ratatoskr-sites.

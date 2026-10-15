@@ -52,6 +52,12 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 tokio = { version = "1.46", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync", "fs", "io-util"] }
 axum  = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"] }
 
+# The HTTP client of the notes internal index route, on loopback. The versions of
+# ratatoskr-platform.
+http-body-util = "0.1.5"
+hyper          = { version = "1.11.0", features = ["client", "http1"] }
+hyper-util     = { version = "0.1.20", features = ["client-legacy", "tokio", "http1"] }
+
 # ---- paths ----
 # The path key of ratatoskr-notes: NFC, then Unicode default case folding. A publication compares
 # folders with it, so `Private` excludes `private/x.md` as it does in notes. The versions of

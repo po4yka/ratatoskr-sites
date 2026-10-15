@@ -55,6 +55,10 @@ pub struct SitesConfig {
     #[serde(default)]
     pub blobs: BlobsConfig,
 
+    /// The notes domain listener that serves the internal index route.
+    #[serde(default)]
+    pub notes: NotesConfig,
+
     /// The graceful stop.
     #[serde(default)]
     pub shutdown: ShutdownConfig,
@@ -169,6 +173,28 @@ fn default_blob_root() -> PathBuf {
 
 fn default_notes_root() -> PathBuf {
     PathBuf::from("/mnt/nvme/ratatoskr/blobs/ratatoskr-notes")
+}
+
+/// `RATATOSKR__NOTES__*`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotesConfig {
+    /// The base URL of the notes domain listener, `http://127.0.0.1:8099` on the host. The service
+    /// reads `GET /internal/connections/{connection}/files` there.
+    #[serde(default = "default_notes_base_url")]
+    pub base_url: String,
+}
+
+impl Default for NotesConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_notes_base_url(),
+        }
+    }
+}
+
+fn default_notes_base_url() -> String {
+    "http://127.0.0.1:8099".to_owned()
 }
 
 /// `RATATOSKR__SHUTDOWN__*`.
@@ -369,6 +395,17 @@ fn validate(config: &SitesConfig) -> Vec<Violation> {
             key: "api.listen_address",
             env_var: "RATATOSKR__API__LISTEN_ADDRESS",
             rule: "must differ from the operator listener admin.bind",
+        });
+    }
+    let notes_url = config.notes.base_url.parse::<hyper::http::Uri>();
+    let plain_http = notes_url
+        .as_ref()
+        .is_ok_and(|uri| uri.scheme_str() == Some("http") && uri.host().is_some());
+    if !plain_http {
+        found.push(Violation {
+            key: "notes.base_url",
+            env_var: "RATATOSKR__NOTES__BASE_URL",
+            rule: "must be an http:// URL of the notes domain listener, e.g. http://127.0.0.1:8099",
         });
     }
     if !(1..=16).contains(&config.database.max_connections) {

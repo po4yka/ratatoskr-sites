@@ -88,6 +88,7 @@ validates the environment and binds nothing (exit 0 valid, exit 78 invalid).
 | `RATATOSKR__BUS__NKEY_SEED_PATH` | none | The nkey seed of the `SITES` identity, `/etc/ratatoskr/sites.nkey` on the host. Every connection uses the inbox prefix `_INBOX_sites`. |
 | `RATATOSKR__BLOBS__ROOT` | `/mnt/nvme/ratatoskr/blobs/ratatoskr-sites` | The pages and assets of each release. |
 | `RATATOSKR__BLOBS__NOTES_ROOT` | `/mnt/nvme/ratatoskr/blobs/ratatoskr-notes` | The note bytes, read only. |
+| `RATATOSKR__NOTES__BASE_URL` | `http://127.0.0.1:8099` | The notes domain listener; the build reads `GET /internal/connections/{connection}/files` there (30 s, at most 32 MiB). |
 | `RATATOSKR__SHUTDOWN__GRACE_SECONDS` | `10` | How long in-flight requests may take after SIGTERM, 1 to 60. |
 | `RATATOSKR__TELEMETRY__LOG_FORMAT` | `text` | `text` or `json`. |
 | `RATATOSKR__TELEMETRY__LOG_FILTER` | `info` | A tracing `EnvFilter` directive string. |

@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::effective::effective_set;
 use crate::events::{self, BuildReport};
 use crate::notes_blobs::{NotesBlobError, NotesBlobReader};
-use crate::notes_index::NotesIndex;
+use crate::notes_index::{IndexError, NotesIndex};
 use crate::provenance::Provenance;
 use crate::sites_blobs::SitesBlobs;
 
@@ -86,6 +86,10 @@ pub enum BuildFailure {
     /// A stored publication does not satisfy the contract.
     #[error("a publication of the site is not valid")]
     PublicationInvalid,
+    /// The notes service does not know a vault connection of a publication: it failed or was
+    /// removed.
+    #[error("a vault connection of the site does not exist")]
+    ConnectionNotFound,
     /// The notes index of a connection could not be read.
     #[error("the notes index is unavailable")]
     IndexUnavailable,
@@ -113,6 +117,7 @@ impl BuildFailure {
             Self::PublicationSuspended => "sites.publication_suspended".to_owned(),
             Self::PublicationInvalid => "sites.publication_invalid".to_owned(),
             Self::IndexUnavailable => "sites.notes_index_unavailable".to_owned(),
+            Self::ConnectionNotFound => "sites.connection_not_found".to_owned(),
             Self::Note(error) => format!("sites.{}", error.class()),
             Self::Build(error) => error.class.to_owned(),
             Self::Store(_) | Self::Database(_) => "sites.service_unavailable".to_owned(),
@@ -302,11 +307,14 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             if let std::collections::btree_map::Entry::Vacant(vacant) =
                 indexes.entry(row.connection_id)
             {
-                let files = self
-                    .index
-                    .files(row.connection_id)
-                    .await
-                    .map_err(|_| BuildFailure::IndexUnavailable)?;
+                let files =
+                    self.index
+                        .files(row.connection_id)
+                        .await
+                        .map_err(|error| match error {
+                            IndexError::Unavailable => BuildFailure::IndexUnavailable,
+                            IndexError::ConnectionNotFound => BuildFailure::ConnectionNotFound,
+                        })?;
                 vacant.insert(files);
             }
         }

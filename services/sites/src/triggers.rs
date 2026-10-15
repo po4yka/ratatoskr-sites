@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::consumer::{self, BusTarget, Disposition, Durable, Durables, Inbound};
-use crate::notes_index::NotesIndex;
+use crate::notes_index::{IndexError, NotesIndex};
 use crate::release_build::{BuildFailure, report};
 use crate::servable::Servable;
 use crate::worker::{BuildQueue, SiteBuilds, build_queue};
@@ -238,7 +238,9 @@ impl<I: NotesIndex + 'static> Triggers<I> {
                 if files.is_none() {
                     match self.index.files(change.connection_id.0).await {
                         Ok(read) => files = Some(read),
-                        Err(_) => return Ok(None),
+                        // A removed connection has no file that a publication selects now.
+                        Err(IndexError::ConnectionNotFound) => files = Some(Vec::new()),
+                        Err(IndexError::Unavailable) => return Ok(None),
                     }
                 }
                 let (Ok(site), Ok(publication_id)) = (

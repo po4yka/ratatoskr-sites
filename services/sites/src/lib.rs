@@ -45,7 +45,14 @@ use crate::api::ApiState;
 use crate::config::{LogFormat, SitesConfig, TelemetryConfig};
 use crate::consumer::{BusTarget, Durable, Durables};
 use crate::notes_blobs::NotesBlobReader;
-use crate::notes_index::UnavailableIndex;
+use crate::notes_index::HttpNotesIndex;
+
+/// How long one read of the notes index of a connection may take.
+const NOTES_INDEX_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The largest answer of the notes index of a connection: 32 MiB, the index of a vault of tens of
+/// thousands of notes.
+const NOTES_INDEX_MAX_BYTES: usize = 32 * 1024 * 1024;
 use crate::outbox::OutboxRelay;
 use crate::release_build::ReleaseBuilder;
 use crate::servable::Servable;
@@ -210,17 +217,22 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     Ok(())
 }
 
-/// The consumers of the four durables, and the build worker. The notes
-/// index is [`UnavailableIndex`] until the notes internal index route exists.
+/// The consumers of the four durables, and the build worker, which read the notes internal index
+/// route at `RATATOSKR__NOTES__BASE_URL`.
 fn start_pipeline(
     config: &SitesConfig,
     shared: &Shared,
     url: &str,
     stop: &tokio_util::sync::CancellationToken,
 ) -> Vec<tokio::task::JoinHandle<()>> {
+    let index = HttpNotesIndex::new(
+        &config.notes.base_url,
+        NOTES_INDEX_TIMEOUT,
+        NOTES_INDEX_MAX_BYTES,
+    );
     let builder = ReleaseBuilder::new(
         shared.database.clone(),
-        UnavailableIndex,
+        index.clone(),
         NotesBlobReader::new(&config.blobs.notes_root),
         config.blobs.root.clone(),
     );
@@ -230,7 +242,7 @@ fn start_pipeline(
     };
     triggers::start(
         shared,
-        UnavailableIndex,
+        index,
         builder,
         &Consumers {
             target: &target,

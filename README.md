@@ -9,8 +9,8 @@ site is an independent UI in its own repository, and reads a release with `@rata
 > immutable release through the privacy filter, makes it current in one transaction and announces
 > it, coalesces the builds that commands and note changes request, keeps the manifest and the
 > projection of the approvals of Platform, and serves the current release of each approved site
-> through the Content Delivery API. The notes internal index route does not exist yet, so a build
-> on the host fails with `sites.notes_index_unavailable` until it does.
+> through the Content Delivery API. It reads the index of each vault connection from the notes
+> internal index route.
 
 > [!IMPORTANT]
 > **Ratatoskr is in development.** No database holds data that has to survive a schema change.
@@ -97,7 +97,7 @@ What the allowlist does to markup that a note writes:
 - [x] Build triggers and the suspension of a disconnected vault (tasks 5.22 to 5.25).
 - [x] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
 - [x] Owner guide (task 5.36).
-- [ ] The HTTP client of the notes internal index route (workspace tasks 4.1 to 4.5).
+- [x] The HTTP client of the notes internal index route (workspace tasks 4.1 to 4.5).
 
 ## Development
 

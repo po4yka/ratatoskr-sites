@@ -94,10 +94,12 @@ rows of the current release id, ranks by `ts_rank`, and breaks a tie by slug.
 
 ### 9. The notes index in production
 
-The notes internal index route does not exist yet. The service runs with an index that is always
-unavailable, so every build in production fails with `sites.notes_index_unavailable` and a note
-change asks for a redelivery. The index becomes an HTTP client of the route when workspace tasks
-4.1 to 4.5 land.
+The service reads `GET /internal/connections/{connection}/files` of the notes domain listener
+(`RATATOSKR__NOTES__BASE_URL`, default `http://127.0.0.1:8099`) with a timeout of 30 s and an
+answer of at most 32 MiB. A 404 of notes is `sites.connection_not_found`, which a retry does not
+help; a timeout, an error status, an oversized or unreadable answer is
+`sites.notes_index_unavailable`, which the worker tries again. A note change of a connection that
+notes does not know selects nothing now.
 
 ### 10. The tests that observe the servable set
 
