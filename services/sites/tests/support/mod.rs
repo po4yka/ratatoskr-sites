@@ -5,6 +5,7 @@
 #![allow(dead_code, reason = "each test file uses a part of the fixture")]
 
 pub(crate) mod bus;
+pub(crate) mod http;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

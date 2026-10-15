@@ -5,7 +5,7 @@
 
 ## 2. A disconnected vault (workspace tasks 5.24, 5.25)
 
-- [ ] 2.1 RED: add `services/sites/tests/disconnect.rs` with `suspended_publication_does_not_build` and `withdrawn_site_is_indistinguishable_from_unknown`. Confirm that the class assertion of the first fails because the build runs.
+- [x] 2.1 RED: add `services/sites/tests/disconnect.rs` with `suspended_publication_does_not_build` and `withdrawn_site_is_indistinguishable_from_unknown`. Confirm that the class assertion of the first fails because the build runs.
 - [ ] 2.2 GREEN: consume `ratatoskr_sites_vault_disconnections`, suspend the publications of the connection, and fail a build of a suspended publication with `sites.publication_suspended`. Verify 2.1.
 
 ## 3. Manifest and approval projection (workspace tasks 5.26, 5.27)

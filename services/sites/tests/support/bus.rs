@@ -312,3 +312,47 @@ impl super::Fixture {
         }
     }
 }
+
+/// `evt.platform.site_approval.changed.v1` of Platform for `site`, owned by `owner`.
+pub(crate) fn approval(
+    site: &str,
+    digest: &str,
+    capabilities: &[&str],
+    hostname: &str,
+    approved: bool,
+    owner: Uuid,
+) -> Result<Vec<u8>, Failure> {
+    let payload: ratatoskr_sites_contracts::SiteApprovalChanged =
+        serde_json::from_value(serde_json::json!({
+            "site_id": site,
+            "manifest_sha256": digest,
+            "capabilities": capabilities,
+            "hostname": hostname,
+            "state": if approved { "approved" } else { "withdrawn" },
+        }))?;
+    event("ratatoskr-edge", owner, &payload)
+}
+
+/// `evt.notes.vault.disconnected.v1` of notes for `connection`, owned by `owner`.
+pub(crate) fn disconnection(connection: Uuid, owner: Uuid) -> Result<Vec<u8>, Failure> {
+    let payload: ratatoskr_notes_contracts::VaultDisconnected =
+        serde_json::from_value(serde_json::json!({
+            "connection_id": connection.to_string(),
+            "channel": "plugin",
+            "vault_display_name": "Fixture vault",
+        }))?;
+    event("ratatoskr-notes", owner, &payload)
+}
+
+/// The operation report of `operation_id` in the outbox, if there is one.
+pub(crate) async fn report_of(
+    fixture: &super::Fixture,
+    operation_id: Uuid,
+) -> Result<Option<serde_json::Value>, Failure> {
+    Ok(fixture.reports().await?.into_iter().find(|report| {
+        report
+            .get("operation_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(operation_id.to_string().as_str())
+    }))
+}

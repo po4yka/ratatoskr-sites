@@ -238,7 +238,7 @@ impl<I: NotesIndex + 'static> Inbound for Triggers<I> {
         let applied = match durable {
             Durable::ReleaseBuilds => self.command(payload).await,
             Durable::NoteChanges => self.note_change(payload).await,
-            Durable::VaultDisconnections | Durable::Approvals => Ok(Disposition::Retry),
+            Durable::VaultDisconnections | Durable::Approvals => Ok(Disposition::Done),
         };
         applied.unwrap_or_else(|error| {
             tracing::warn!(%error, ?durable, "a message could not be applied; it comes again");

@@ -12,6 +12,7 @@
 //! | `78` | `EX_CONFIG`: the configuration is unreadable or invalid; nothing was bound |
 
 pub mod admin;
+pub mod api;
 pub mod config;
 pub mod consumer;
 pub mod events;

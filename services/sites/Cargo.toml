@@ -43,6 +43,7 @@ uuid.workspace                        = true
 ratatoskr-sites-persistence  = { workspace = true, features = ["test-support"] }
 ratatoskr-sites-publications = { workspace = true, features = ["test-support"] }
 tempfile.workspace           = true
+tower.workspace              = true
 
 [lints]
 workspace = true
