@@ -456,3 +456,81 @@ async fn non_ascii_tag_survives_a_build_from_the_release() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn unchanged_document_rewrites_its_publications() -> Outcome {
+    let fixture = Fixture::new().await?;
+    sqlx::query("update sites.publications set release_mode = 'manual'")
+        .execute(fixture.database.pool())
+        .await?;
+    fixture.add_note("shared/n.md", "# Shared\n\nA shared note.\n")?;
+    publication(&fixture, "pub-a", "all", &["shared"], &[], &[]).await?;
+    let both = TestManifest::of("r.example.test", &["pub-r", "pub-a"], &CAPABILITIES);
+    fixture.approve_directly(&both).await?;
+    let first = fixture.builder().build(&request(None)).await?;
+    let (bus, running, api) = started(&fixture).await?;
+
+    // pub-r now excludes shared/; pub-a still selects shared/n.md, so the document stays.
+    put(
+        &api,
+        &fixture,
+        "pub-r",
+        &json!({
+            "connection_id": fixture.index.connection(), "mode": "all", "release_mode": "manual",
+            "included_folders": [], "excluded_folders": ["private", "shared"],
+            "included_tags": [], "frontmatter_allow": [],
+        }),
+    )
+    .await?;
+    built(&fixture).await?;
+    let (current, _) =
+        ratatoskr_sites::release_read::current_release(&fixture.database.database, SITE)
+            .await?
+            .ok_or("the site has a release")?;
+    assert_eq!(
+        current, first.release_id,
+        "the release document did not change"
+    );
+    assert_eq!(
+        publications_of(&fixture, "shared/n.md").await?,
+        vec![vec!["pub-a".to_owned()]],
+        "the sources lose pub-r"
+    );
+    let page: Vec<String> = sqlx::query_scalar(
+        "select publication_ids from sites.release_pages where release_id = $1 \
+         and slug = 'shared/n'",
+    )
+    .bind(&current)
+    .fetch_one(fixture.database.pool())
+    .await?;
+    assert_eq!(page, ["pub-a"], "the page loses pub-r");
+
+    let removed = call(
+        &api,
+        owner(
+            Method::DELETE,
+            &format!("/v1/sites/{SITE}/publications/pub-a"),
+            fixture.owner,
+            Vec::new(),
+        )?,
+    )
+    .await?;
+    assert_eq!(removed.status, StatusCode::NO_CONTENT);
+    let answer = call(
+        &api,
+        anonymous(
+            Method::GET,
+            &format!("/v1/sites/{SITE}/content/pages/shared/n"),
+        )?,
+    )
+    .await?;
+    assert_eq!(
+        answer.status,
+        StatusCode::NOT_FOUND,
+        "the page stops with pub-a"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
