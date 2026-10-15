@@ -208,7 +208,7 @@ impl State {
             if !attribute.name.ns.is_empty() || !allowed.contains(&key) {
                 continue;
             }
-            let Some(value) = allowed_value(key, &attribute.value) else {
+            let Some(value) = allowed_value(name, key, &attribute.value) else {
                 continue;
             };
             self.out.push(' ');
@@ -259,8 +259,21 @@ fn attribute(tag: &Tag, key: &str) -> Option<String> {
         .map(|attribute| attribute.value.to_ascii_lowercase())
 }
 
-/// The value of `key` that may stay, or `None` when the attribute is removed.
-fn allowed_value(key: &str, value: &str) -> Option<String> {
+/// The classes that the renderer writes on a `div`.
+const DIV_CLASSES: [&str; 3] = ["callout", "callout-title", "callout-content"];
+
+/// The longest language of a code block in its class `language-<lang>`.
+const MAX_LANGUAGE: usize = 32;
+
+/// The value of the attribute `key` of `element` that may stay, or `None` when the attribute is
+/// removed.
+fn allowed_value(element: &str, key: &str, value: &str) -> Option<String> {
+    match key {
+        "class" => return allowed_class(element, value),
+        "id" => return crate::ids::is_heading_id(value).then(|| value.to_owned()),
+        "src" => return allowed_image(value),
+        _ => {}
+    }
     if !URL_ATTRIBUTES.contains(&key) {
         return Some(value.to_owned());
     }
@@ -278,6 +291,54 @@ fn allowed_value(key: &str, value: &str) -> Option<String> {
         }
         _ => Some(url),
     }
+}
+
+/// The classes of `value` that the renderer writes on `element`: the callout classes on a `div`,
+/// and one `language-<lang>` on a `code`, with a lang of at most [`MAX_LANGUAGE`] lower-case ASCII
+/// letters, digits and `+`, `#`, `.`, `_`, `-`.
+fn allowed_class(element: &str, value: &str) -> Option<String> {
+    let kept: Vec<&str> = match element {
+        "div" => value
+            .split_ascii_whitespace()
+            .filter(|class| DIV_CLASSES.contains(class))
+            .collect(),
+        "code" => value
+            .split_ascii_whitespace()
+            .filter(|class| {
+                class.strip_prefix("language-").is_some_and(|lang| {
+                    (1..=MAX_LANGUAGE).contains(&lang.len())
+                        && lang.bytes().all(|byte| {
+                            byte.is_ascii_lowercase()
+                                || byte.is_ascii_digit()
+                                || matches!(byte, b'+' | b'#' | b'.' | b'_' | b'-')
+                        })
+                })
+            })
+            .take(1)
+            .collect(),
+        _ => Vec::new(),
+    };
+    (!kept.is_empty()).then(|| kept.join(" "))
+}
+
+/// The source of an image that may stay: an asset of the release, `assets/<sha256>`, or an
+/// `https:` URL. No `http:`, no protocol-relative URL and no other path of the site's origin.
+fn allowed_image(value: &str) -> Option<String> {
+    let url: String = value
+        .trim()
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let asset = url.strip_prefix("assets/").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    });
+    let https = url
+        .get(..6)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));
+    (asset || https).then_some(url)
 }
 
 /// `text` with `&`, `<`, `>`, `"` and `'` escaped.

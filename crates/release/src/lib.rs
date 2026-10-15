@@ -11,6 +11,7 @@
 //! body then passes the closed allowlist (`sanitise`).
 
 mod filter;
+pub mod ids;
 mod render;
 pub mod sanitise;
 mod source;

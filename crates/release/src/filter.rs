@@ -219,22 +219,9 @@ fn anchor_of(reference: &str) -> Option<Anchor> {
     }
 }
 
-/// The anchor of a heading with the text `text`: lower case, each run of white space one `-`, and
-/// no `#` or `/`.
+/// The anchor of a heading with the text `text`, by the one rule of [`crate::ids::heading_id`].
 pub(crate) fn heading_anchor(text: &str) -> Option<Anchor> {
-    let mut anchor = String::with_capacity(text.len());
-    for word in text.split_whitespace() {
-        if !anchor.is_empty() {
-            anchor.push('-');
-        }
-        anchor.extend(
-            word.chars()
-                .filter(|c| *c != '#' && *c != '/' && !c.is_control())
-                .flat_map(char::to_lowercase),
-        );
-    }
-    let anchor: String = anchor.chars().take(255).collect();
-    Anchor::parse(&anchor).ok()
+    crate::ids::heading_id(text).and_then(|id| Anchor::parse(&id).ok())
 }
 
 fn is_external(url: &str) -> bool {
