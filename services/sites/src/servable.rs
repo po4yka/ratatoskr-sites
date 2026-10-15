@@ -3,10 +3,11 @@
 //! the effective set take the same path and cost no database query.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use ratatoskr_sites_contracts::SiteCapability;
 use ratatoskr_sites_persistence::Database;
+#[cfg(feature = "test-support")]
 use tokio::sync::Notify;
 
 use crate::effective::effective_set;
@@ -36,7 +37,8 @@ pub struct Servable {
     refreshing: tokio::sync::Mutex<()>,
     /// The build worker, woken for a removal build.
     queue: OnceLock<BuildQueue>,
-    pause: Mutex<Option<RefreshPause>>,
+    #[cfg(feature = "test-support")]
+    pause: std::sync::Mutex<Option<RefreshPause>>,
 }
 
 /// The `ETag` value of the release `release_id` served for `publications`: the release id, and the
@@ -46,6 +48,7 @@ fn tag_of(release_id: &str, publications: &[String]) -> String {
     format!("\"{release_id}.{}\"", list.get(..16).unwrap_or_default())
 }
 
+#[cfg(feature = "test-support")]
 /// A seam for the tests of the refresh: the next refresh stops between its read and its write,
 /// tells [`RefreshPause::reached`], and waits for [`RefreshPause::release`].
 #[derive(Debug, Clone, Default)]
@@ -87,7 +90,9 @@ impl Servable {
         }
     }
 
-    /// Stop the next refresh between its read and its write. For tests.
+    /// Stop the next refresh between its read and its write. Built only with the feature
+    /// `test-support`.
+    #[cfg(feature = "test-support")]
     #[must_use]
     pub fn pause_next_refresh(&self) -> RefreshPause {
         let pause = RefreshPause::default();
@@ -128,10 +133,13 @@ impl Servable {
                     tag,
                 }
             });
-        let pause = self.pause.lock().ok().and_then(|mut held| held.take());
-        if let Some(pause) = pause {
-            pause.reached.notify_one();
-            pause.release.notified().await;
+        #[cfg(feature = "test-support")]
+        {
+            let pause = self.pause.lock().ok().and_then(|mut held| held.take());
+            if let Some(pause) = pause {
+                pause.reached.notify_one();
+                pause.release.notified().await;
+            }
         }
         let shrunk = self.sites.read().ok().is_some_and(|sites| {
             sites.get(site_id).is_some_and(|before| {

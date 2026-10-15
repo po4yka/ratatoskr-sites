@@ -45,9 +45,9 @@ pub struct BuildJob {
     pub operation_ids: Vec<Uuid>,
     /// `true` when a build command is among the requests, `false` when only file changes are.
     pub explicit: bool,
-    /// `false` while the worker tries a build that failed for a transient reason again: such a
-    /// failure is then not reported, and the operations wait for the next try.
-    pub final_attempt: bool,
+    /// The operations of `operation_ids` that the worker tries again after a transient failure:
+    /// such a failure is not reported to them, and they wait for the next try.
+    pub retried: Vec<Uuid>,
 }
 
 impl From<&BuildRequest> for BuildJob {
@@ -56,7 +56,7 @@ impl From<&BuildRequest> for BuildJob {
             site_id: request.site_id.clone(),
             operation_ids: request.operation_id.into_iter().collect(),
             explicit: true,
-            final_attempt: true,
+            retried: Vec::new(),
         }
     }
 }
@@ -196,13 +196,11 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
         let outcome = self.build_site(&job.site_id, owner, job.explicit).await;
-        if let Err(failure) = &outcome
-            && failure.retryable()
-            && !job.final_attempt
-        {
-            return outcome;
-        }
+        let transient = outcome.as_ref().is_err_and(BuildFailure::retryable);
         for &operation_id in &job.operation_ids {
+            if transient && job.retried.contains(&operation_id) {
+                continue;
+            }
             if let Err(error) = report(&self.database, owner, operation_id, &outcome).await {
                 // The outcome of the build stays the answer; Platform's stale-operation reaper
                 // ends an operation whose report is lost.

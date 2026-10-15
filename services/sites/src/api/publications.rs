@@ -246,6 +246,8 @@ pub(crate) async fn remove(
             .execute(state.database.pool())
             .await?;
     if removed.rows_affected() == 0 {
+        // A retry after a DELETE whose refresh failed: the set is read again before the answer.
+        state.servable.refresh(&state.database, &site).await?;
         return Err(Fault::PublicationNotFound);
     }
     // The publication leaves the effective set at once, and with it its pages and assets; a build

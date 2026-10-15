@@ -40,7 +40,12 @@ tracing.workspace                     = true
 tracing-subscriber.workspace          = true
 uuid.workspace                        = true
 
+[features]
+# Test-only seams: Servable::pause_next_refresh. Never compiled into the service binary.
+test-support = []
+
 [dev-dependencies]
+ratatoskr-sites              = { path = ".", features = ["test-support"] }
 ratatoskr-sites-persistence  = { workspace = true, features = ["test-support"] }
 ratatoskr-sites-publications = { workspace = true, features = ["test-support"] }
 tempfile.workspace           = true

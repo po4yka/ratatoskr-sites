@@ -153,18 +153,8 @@ impl<B: SiteBuilds> BuildWorker<B> {
         }
     }
 
-    /// Keep the rows `taken` of `site_id` with one more attempt, and wake the worker for the site
-    /// after [`RETRY_DELAY`].
-    async fn retry_later(&self, site_id: &str, taken: &[Uuid]) {
-        if let Err(error) = sqlx::query(
-            "update sites.build_requests set attempts = attempts + 1 where request_id = any($1)",
-        )
-        .bind(taken)
-        .execute(self.database.pool())
-        .await
-        {
-            tracing::warn!(%error, site_id, "the attempts of a build could not be counted");
-        }
+    /// Wake the worker for `site_id` after [`RETRY_DELAY`].
+    fn retry_later(&self, site_id: &str) {
         let wake = self.retry.clone();
         let site_id = site_id.to_owned();
         tokio::spawn(async move {
@@ -175,15 +165,18 @@ impl<B: SiteBuilds> BuildWorker<B> {
 
     /// Build `site_id` until it has no request row. One build takes every row that is there when
     /// it starts, and deletes exactly those rows after it, so the requests that arrive while a
-    /// build runs make one more build (workspace design D6). A build that fails for a transient
-    /// reason keeps its rows and is tried again after [`RETRY_DELAY`], at most [`MAX_ATTEMPTS`]
-    /// times; only the last failure is reported.
+    /// build runs make one more build (workspace design D6).
+    ///
+    /// Each row counts its own attempts, before the build: when the count cannot be written,
+    /// nothing is built. A build that fails for a transient reason deletes the rows that reached
+    /// [`MAX_ATTEMPTS`], reports the failure to their operations only, and is tried again for the
+    /// other rows after [`RETRY_DELAY`].
     async fn drain(&self, site_id: &str) {
         type Row = (Uuid, String, Option<Uuid>, i32);
         loop {
             let rows: Result<Vec<Row>, sqlx::Error> = sqlx::query_as(
-                "select request_id, origin, operation_id, attempts from sites.build_requests \
-                 where site_id = $1 order by requested_at, request_id",
+                "update sites.build_requests set attempts = attempts + 1 where site_id = $1 \
+                 returning request_id, origin, operation_id, attempts",
             )
             .bind(site_id)
             .fetch_all(self.database.pool())
@@ -192,18 +185,22 @@ impl<B: SiteBuilds> BuildWorker<B> {
                 Ok(rows) if rows.is_empty() => return,
                 Ok(rows) => rows,
                 Err(error) => {
-                    tracing::warn!(%error, site_id, "the build requests could not be read");
+                    tracing::warn!(%error, site_id, "the build requests could not be counted; nothing is built");
                     return;
                 }
             };
-            let attempts = rows.iter().map(|row| row.3).max().unwrap_or(0) + 1;
             let job = BuildJob {
                 site_id: site_id.to_owned(),
                 operation_ids: rows.iter().filter_map(|row| row.2).collect(),
                 explicit: rows.iter().any(|row| row.1 == "command"),
-                final_attempt: attempts >= MAX_ATTEMPTS,
+                retried: rows
+                    .iter()
+                    .filter(|row| row.3 < MAX_ATTEMPTS)
+                    .filter_map(|row| row.2)
+                    .collect(),
             };
-            let taken: Vec<Uuid> = rows.iter().map(|row| row.0).collect();
+            let mut taken: Vec<Uuid> = rows.iter().map(|row| row.0).collect();
+            let mut again = false;
             match self.builds.build(&job).await {
                 Ok(outcome) if outcome.new_release => {
                     if let Err(error) = self.servable.refresh(&self.database, site_id).await {
@@ -211,10 +208,14 @@ impl<B: SiteBuilds> BuildWorker<B> {
                     }
                 }
                 Ok(_) => {}
-                Err(error) if error.retryable() && !job.final_attempt => {
-                    tracing::info!(%error, class = %error.class(), site_id, attempts, "a build failed; it is tried again");
-                    self.retry_later(site_id, &taken).await;
-                    return;
+                Err(error) if error.retryable() => {
+                    taken = rows
+                        .iter()
+                        .filter(|row| row.3 >= MAX_ATTEMPTS)
+                        .map(|row| row.0)
+                        .collect();
+                    again = taken.len() < rows.len();
+                    tracing::info!(%error, class = %error.class(), site_id, again, "a build failed for a transient reason");
                 }
                 Err(error) => {
                     tracing::info!(%error, class = %error.class(), site_id, "a build made no release");
@@ -227,6 +228,10 @@ impl<B: SiteBuilds> BuildWorker<B> {
                     .await
             {
                 tracing::warn!(%error, site_id, "the build requests could not be removed");
+                return;
+            }
+            if again {
+                self.retry_later(site_id);
                 return;
             }
         }
