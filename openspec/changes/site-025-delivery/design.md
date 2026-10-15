@@ -167,13 +167,28 @@ makes an ordinary build, because the command or the automatic mode releases new 
 
 ### 15. Fourth review (workspace tasks 5.62 to 5.66)
 
-- Each source row holds the publications that selected it. A publication that a build reads from
-  the release takes exactly its rows and the attachments of the release, and is not selected again,
-  so a `publish` value or a tag that the projection does not keep cannot drop a note. The projection
-  keeps only what rendering reads.
+- Each source row holds the publications that published it. A publication that a build reads from
+  the release gets only the rows that name it (corrected in design 16: it then selects among them
+  with its current configuration). The projection keeps only what rendering reads.
 - Each note in the sources keeps only the links and embeds that its rendered page resolved, without
   display text; a link inside a comment never reaches them.
 - A note that two publications of a site select, for example a manual and an automatic one over the
   same folder, is taken once: from the first of them in the order of the publication ids. In a build
   that no command requested, the served text of that note is the released text when the manual
   publication comes first, and the text of the notes index when the automatic one comes first.
+
+### 16. Fifth review (workspace tasks 5.67 to 5.73)
+
+- A released row is eligible for a publication when the publication published it at release time
+  (`publication_ids`) and its current configuration still selects it. Each note row holds the
+  selection inputs as published facts: `names_site` (its `publish` value named the site) and
+  `selection_tags` (its tags, lower case without `#`, that matched an included tag of a selecting
+  publication). A build from the release gives the note `publish: true` when `names_site`, and these
+  tags, and runs the selection with the current mode, folders and included tags. A publication read
+  from the release can only shrink.
+- An attachment row names the publications that selected a note that uses it and that do not
+  exclude it; the asset of the release carries the same publications. A schema CHECK refuses a row
+  without publications.
+- The stored frontmatter of a note holds the union of the allowlists of the publications that
+  selected it (never `publish`). A page renders only the frontmatter keys of the current allowlist
+  of the publication that renders it, among the stored ones.

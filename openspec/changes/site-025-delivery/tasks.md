@@ -98,4 +98,4 @@ its current configuration still selects it: a build from the release can only sh
 - [x] 14.4 GREEN (5.70): give each attachment and asset the publications that selected a page that uses it and that do not exclude it, and give a released attachment only to those publications. Verify 14.3.
 - [x] 14.5 RED (5.71): add `release_sources.rs::every_source_row_names_its_publications` (no row without publications; the schema refuses one) and `release_sources.rs::stored_frontmatter_holds_no_publish` (also when the allowlist names `publish`). Confirm that each fails on its assertion.
 - [x] 14.6 GREEN (5.72): a CHECK that `publication_ids` is not empty, and no `publish` key in the stored frontmatter. Verify 14.5.
-- [ ] 14.7 (5.73) Document that the stored frontmatter keys are the union of the allowlists of the selecting publications and that a page renders only the current allowlist of the publication that renders it. No test: documentation.
+- [x] 14.7 (5.73) Document that the stored frontmatter keys are the union of the allowlists of the selecting publications and that a page renders only the current allowlist of the publication that renders it. No test: documentation.

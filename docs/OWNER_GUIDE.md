@@ -166,6 +166,12 @@ that you add to the frontmatter allowlist of a manual publication appears only w
 that you request; for an automatic publication it also appears with the next change of one of its
 notes.
 
+The service keeps, for each published note, the frontmatter fields that any publication that
+selected it allowed. A page shows only the fields of the current allowlist of the publication that
+shows it, among those kept. When you narrow a publication (an excluded folder, a tag that you no
+longer include) the next build drops its notes, also a build that the service starts after a
+removal; a build from the release never adds a note.
+
 When two publications of a site select the same note, the note is published once, from the
 publication whose id comes first. If one is manual and one is automatic, give them folders that do
 not overlap: otherwise a change of the automatic one can publish the note as it is now, when the
