@@ -44,7 +44,8 @@ tracing-subscriber.workspace          = true
 uuid.workspace                        = true
 
 [features]
-# Test-only seams: Servable::pause_next_refresh. Never compiled into the service binary.
+# Test-only seams: Servable::pause_next_refresh and ReleaseBuilder::pause_before_lock. Never
+# compiled into the service binary.
 test-support = []
 
 [dev-dependencies]

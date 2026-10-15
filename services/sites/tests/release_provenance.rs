@@ -466,6 +466,20 @@ async fn manual_publication_gains_no_new_attachment_revision() -> Outcome {
         StatusCode::NOT_FOUND,
         "pub-r alone never serves bytes that it did not release"
     );
+    let old_hex = ratatoskr_sites_release::sha256_hex(old);
+    let old_asset = call(
+        &api,
+        anonymous(
+            Method::GET,
+            &format!("/v1/sites/{SITE}/content/assets/{old_hex}"),
+        )?,
+    )
+    .await?;
+    assert_eq!(
+        old_asset.status,
+        StatusCode::NOT_FOUND,
+        "and the released revision at the same path fails closed too"
+    );
 
     running.stop().await;
     bus.cleanup().await?;

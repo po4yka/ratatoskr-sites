@@ -19,17 +19,24 @@ const CAPABILITIES: [&str; 3] = ["pages.read", "assets.read", "search.publicatio
 /// A site with `pub-r` (manual, the whole vault but `private/`) and `pub-s` (the folder
 /// `private/`), both approved, and a first release.
 async fn two_publications() -> Result<Fixture, Failure> {
+    two_publications_in("manual").await
+}
+
+/// As [`two_publications`], with both publications in `release_mode`.
+async fn two_publications_in(release_mode: &str) -> Result<Fixture, Failure> {
     let fixture = Fixture::new().await?;
-    sqlx::query("update sites.publications set release_mode = 'manual'")
+    sqlx::query("update sites.publications set release_mode = $1")
+        .bind(release_mode)
         .execute(fixture.database.pool())
         .await?;
     sqlx::query(
         "insert into sites.publications (site_id, publication_id, connection_id, mode, \
          release_mode, included_folders, created_at) \
-         values ($1, 'pub-s', $2, 'all', 'manual', '{private}', now())",
+         values ($1, 'pub-s', $2, 'all', $3, '{private}', now())",
     )
     .bind(SITE)
     .bind(fixture.index.connection())
+    .bind(release_mode)
     .execute(fixture.database.pool())
     .await?;
     let both = TestManifest::of("r.example.test", &["pub-r", "pub-s"], &CAPABILITIES);
@@ -92,6 +99,30 @@ async fn removed_publication_is_built_out_of_the_kept_pages() -> Outcome {
 
     running.stop().await;
     bus.cleanup().await?;
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn automatic_publication_removed_from_the_manifest_requests_a_build() -> Outcome {
+    let fixture = two_publications_in("automatic").await?;
+    let api = fixture.api().await?;
+    assert_eq!(requests(&fixture).await?, 0);
+
+    let narrower = TestManifest::of("r.example.test", &["pub-r"], &CAPABILITIES);
+    assert_eq!(
+        submit(&api, fixture.owner, &narrower).await?.status,
+        StatusCode::OK
+    );
+    let origins: Vec<String> =
+        sqlx::query_scalar("select origin from sites.build_requests where site_id = $1")
+            .bind(SITE)
+            .fetch_all(fixture.database.pool())
+            .await?;
+    assert_eq!(
+        origins,
+        vec!["removal".to_owned()],
+        "a publication that leaves the manifest of an automatic site requests one removal build"
+    );
     fixture.cleanup().await
 }
 

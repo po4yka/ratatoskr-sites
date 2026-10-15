@@ -4,6 +4,8 @@
 
 mod support;
 
+use std::time::Duration;
+
 use ratatoskr_sites::release_build::BuildFailure;
 use ratatoskr_sites_contracts::Release;
 use ratatoskr_sites_release::sha256_hex;
@@ -244,7 +246,9 @@ async fn build_that_loses_the_race_switches_nothing() -> Outcome {
             .await
             .map_err(|error| error.to_string())
     });
-    pause.reached.notified().await;
+    tokio::time::timeout(Duration::from_secs(10), pause.reached.notified())
+        .await
+        .map_err(|_| "the late build did not reach the lock within 10 s")?;
 
     // Meanwhile another build makes another release current.
     fixture.change(

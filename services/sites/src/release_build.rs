@@ -71,7 +71,8 @@ impl From<&BuildRequest> for BuildJob {
 pub struct BuildOutcome {
     /// The release id: the SHA-256 of the RFC 8785 form of the release document.
     pub release_id: String,
-    /// `false` when the build made the release that is already current.
+    /// `false` when the build made the release that is already current, and false when another
+    /// build's release became current first.
     pub new_release: bool,
 }
 
