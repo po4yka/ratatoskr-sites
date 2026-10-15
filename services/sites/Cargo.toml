@@ -52,6 +52,7 @@ test-support = []
 ratatoskr-sites              = { path = ".", features = ["test-support"] }
 ratatoskr-sites-persistence  = { workspace = true, features = ["test-support"] }
 ratatoskr-sites-publications = { workspace = true, features = ["test-support"] }
+nkeys.workspace              = true
 tempfile.workspace           = true
 tower.workspace              = true
 

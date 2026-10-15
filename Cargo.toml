@@ -115,6 +115,9 @@ thiserror  = "2.0"
 
 # ---- dev only ----
 tempfile = "3"
+# The disposable identities of the broker test of the vendored SITES stanza. The version that
+# async-nats already locks.
+nkeys = "0.4.5"
 # `oneshot` on the domain router in the route tests. The version of ratatoskr-notes.
 tower = { version = "0.5", default-features = false, features = ["util"] }
 

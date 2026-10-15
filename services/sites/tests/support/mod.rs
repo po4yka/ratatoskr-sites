@@ -6,6 +6,7 @@
 
 pub(crate) mod bus;
 pub(crate) mod http;
+pub(crate) mod identity_broker;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

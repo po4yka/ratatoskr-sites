@@ -68,3 +68,68 @@ async fn relay_publishes_each_row_once() -> Outcome {
     assert_eq!(unpublished, 0, "every row is marked published");
     fixture.cleanup().await
 }
+
+/// SITE-027 task 9.5: under only the vendored `SITES` stanza, the relay publishes the draft change
+/// event and the release event, and marks both published.
+#[tokio::test]
+async fn outbox_relay_publishes_draft_changed() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let broker = support::identity_broker::IdentityBroker::start().await?;
+    let jetstream = async_nats::jetstream::new(broker.admin().await?);
+    jetstream
+        .create_stream(async_nats::jetstream::stream::Config {
+            name: "ratatoskr_events".to_owned(),
+            subjects: vec![
+                "evt.sites.release.published.v1".to_owned(),
+                "evt.sites.draft.changed.v1".to_owned(),
+                "evt.platform.operation.reported.v1".to_owned(),
+            ],
+            ..Default::default()
+        })
+        .await?;
+
+    // The control first: the release event, which the stanza has always allowed.
+    fixture.builder().build(&request(None)).await?;
+    let event_id = Uuid::now_v7();
+    let draft = ratatoskr_sites::events::draft_changed(
+        event_id,
+        fixture.owner,
+        support::SITE,
+        "src_7Hq2kV9xR4mT1wZp",
+        &"a".repeat(64),
+        None,
+    )?;
+    sqlx::query(
+        "insert into sites.outbox (event_id, subject, payload, created_at) \
+         values ($1, 'evt.sites.draft.changed.v1', $2, now())",
+    )
+    .bind(event_id)
+    .bind(serde_json::to_value(&draft)?)
+    .execute(fixture.database.pool())
+    .await?;
+
+    let relay = OutboxRelay::new(
+        fixture.database.database.clone(),
+        broker.url.clone(),
+        BusConfig {
+            url: Some(broker.url.clone()),
+            nkey_seed_path: Some(broker.sites_seed()),
+        },
+    );
+    let _ = relay.publish_pending().await;
+    let published: Vec<(String, bool)> = sqlx::query_as(
+        "select subject, published_at is not null from sites.outbox order by position",
+    )
+    .fetch_all(fixture.database.pool())
+    .await?;
+    assert!(
+        published.contains(&("evt.sites.release.published.v1".to_owned(), true)),
+        "the control: the release event is acknowledged: {published:?}"
+    );
+    assert!(
+        published.contains(&("evt.sites.draft.changed.v1".to_owned(), true)),
+        "the draft change event is acknowledged and marked published: {published:?}"
+    );
+    drop(broker);
+    fixture.cleanup().await
+}
