@@ -274,3 +274,64 @@ async fn each_request_counts_its_own_attempts() -> Outcome {
     bus.cleanup().await?;
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn automatic_change_keeps_manual_text() -> Outcome {
+    use axum::http::{Method, StatusCode};
+    use support::http::{anonymous, call};
+
+    let fixture = Fixture::new().await?;
+    // pub-r is automatic; pub-s, manual, publishes the folder private/.
+    sqlx::query(
+        "insert into sites.publications (site_id, publication_id, connection_id, mode, \
+         release_mode, included_folders, created_at) \
+         values ($1, 'pub-s', $2, 'all', 'manual', '{private}', now())",
+    )
+    .bind(SITE)
+    .bind(fixture.index.connection())
+    .execute(fixture.database.pool())
+    .await?;
+    let both = support::bus::TestManifest::of(
+        "r.example.test",
+        &["pub-r", "pub-s"],
+        &["pages.read", "assets.read", "search.publication"],
+    );
+    fixture.approve_directly(&both).await?;
+    let bus = TestBus::new().await?;
+    let running = fixture.start(&bus, usize::MAX >> 4).await?;
+    let api = fixture.api_of(&running.shared).await?;
+    command(&fixture, &bus).await?;
+    let first = fixture.release_count().await?;
+
+    // The owner edits the manual note and does not release it; then a note of pub-r changes.
+    fixture.change(
+        "private/zq7plannote.md",
+        "---\ntitle: zq7plantitle\n---\n# zq7planheading\n\nEdited after the release.\n",
+    )?;
+    fixture.change("a.md", "---\npublish: true\n---\nThe note a, changed.\n")?;
+    changes(&fixture, &bus, &["private/zq7plannote.md", "a.md"]).await?;
+    idle(&fixture).await?;
+    assert!(
+        fixture.release_count().await? > first,
+        "the change of pub-r makes a release"
+    );
+
+    let page = call(
+        &api,
+        anonymous(
+            Method::GET,
+            &format!("/v1/sites/{SITE}/content/pages/private/zq7plannote"),
+        )?,
+    )
+    .await?;
+    assert_eq!(page.status, StatusCode::OK);
+    let text = String::from_utf8_lossy(&page.body);
+    assert!(
+        text.contains("zq7planbody") && !text.contains("Edited after the release"),
+        "the release holds the released text of the manual note: {text}"
+    );
+
+    running.stop().await;
+    bus.cleanup().await?;
+    fixture.cleanup().await
+}
