@@ -9,7 +9,7 @@
 - [x] 4.7 RED: add `a_second_deploy_of_the_same_commit_returns_the_first` to `receipt.rs`. It asserts that the second call returns the same deploy id and that the site holds one directory for the commit. Confirm that it fails because the second call stores a second copy.
 - [x] 4.8 GREEN: make the receipt idempotent on site id and commit. Verify 4.7.
 - [x] 4.9 RED: add `crates/deploys/tests/activation.rs` with `activation_switches_current_and_previous_atomically` and `activating_previous_needs_no_download`. The first runs readers that resolve `current` in a loop while commit `b` is activated over commit `a`, and asserts that every reader sees a complete directory of `a` or of `b` and that `previous` points to `a` afterwards; the second asserts that `current` points to `a` after a rollback and that a fake HTTP client records zero requests. Confirm that they fail because activation does not exist.
-- [ ] 4.10 GREEN: implement activation with a temporary link and `rename(2)` for both `current` and `previous`. Verify 4.9.
+- [x] 4.10 GREEN: implement activation with a temporary link and `rename(2)` for both `current` and `previous`. Verify 4.9.
 - [ ] 4.11 RED: add `retention_keeps_current_and_previous` to `activation.rs`: with a retention count of five, a sixth deploy is activated, and the test asserts that the oldest other deploy is removed and that `current` and `previous` remain. Confirm that it fails because six directories remain.
 - [ ] 4.12 GREEN: implement retention after activation. Verify 4.11, and document the store layout in `ratatoskr-sites`' `docs/ARCHITECTURE.md`. No separate test for the documentation.
 

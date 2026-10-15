@@ -13,9 +13,11 @@
 //! └── previous -> bundles/<c1>  replaced by rename(2)
 //! ```
 
+mod activation;
 mod receipt;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ratatoskr_sites_contracts::{CommitSha, DeployActivated, DeployStored, SiteId};
 use ratatoskr_sites_persistence::Database;
@@ -111,16 +113,18 @@ pub struct DeployStore {
     database: Database,
     root: PathBuf,
     limits: Limits,
+    activations: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl DeployStore {
     /// A store under `root` that reads the approval projection of `database`.
     #[must_use]
-    pub const fn new(database: Database, root: PathBuf, limits: Limits) -> Self {
+    pub fn new(database: Database, root: PathBuf, limits: Limits) -> Self {
         Self {
             database,
             root,
             limits,
+            activations: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -172,22 +176,40 @@ impl DeployStore {
 }
 
 impl DeployStore {
-    /// Make the stored deploy of `commit` the current deploy of `site`.
+    /// Make the stored deploy of `commit` the current deploy of `site`, and the deploy that was
+    /// current before it the previous one. It reads and writes nothing but the site directory, so
+    /// a rollback to the previous deploy needs no download. Activations run one at a time.
     ///
     /// # Errors
     ///
-    /// [`DeployError`] when the deploy cannot be activated.
-    #[expect(
-        clippy::unused_async,
-        reason = "the stub of task 4.9 activates nothing yet"
-    )]
+    /// [`DeployError::SiteNotFound`] for a site that is not approved,
+    /// [`DeployError::DeployNotFound`] when the site holds no deploy of `commit`, and
+    /// [`DeployError::Storage`] when a link cannot be written.
     pub async fn activate(
         &self,
         site: &SiteId,
         commit: &CommitSha,
     ) -> Result<DeployActivated, DeployError> {
-        let _ = (site, commit);
-        Err(DeployError::DeployNotFound)
+        self.require_approved(site).await?;
+        let _one_at_a_time = self.activations.lock().await;
+        let site_dir = self.site_dir(site);
+        let wanted = commit.as_str().to_owned();
+        let previous =
+            tokio::task::spawn_blocking(move || activation::activate(&site_dir, &wanted))
+                .await
+                .map_err(|_| {
+                    DeployError::Storage(std::io::Error::other("the activation stopped"))
+                })??;
+        let previous_commit = previous
+            .as_deref()
+            .map(CommitSha::parse)
+            .transpose()
+            .map_err(|_| DeployError::Storage(std::io::Error::other("a link names no commit")))?;
+        Ok(DeployActivated {
+            site_id: site.clone(),
+            current_commit: commit.clone(),
+            previous_commit,
+        })
     }
 }
 
