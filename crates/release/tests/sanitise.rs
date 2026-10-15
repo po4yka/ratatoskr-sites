@@ -5,16 +5,16 @@ use std::collections::BTreeMap;
 
 use ratatoskr_sites_contracts::{Page, PublicationId, SiteId};
 use ratatoskr_sites_publications::test_support::revision_of;
-use ratatoskr_sites_publications::{IndexedFile, Publication, PublicationMode};
+use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, PublicationMode};
 use ratatoskr_sites_release::sanitise::sanitise;
-use ratatoskr_sites_release::{PublicationInput, SiteInput, build_release};
+use ratatoskr_sites_release::{Built, PublicationInput, SiteInput, build_release};
 use serde_json::Value;
 
 type Outcome = Result<(), Box<dyn std::error::Error>>;
 type Failure = Box<dyn std::error::Error>;
 
-/// The one page of a site whose only note is `note.md` with the text `text`.
-fn page_of(text: &str) -> Result<Page, Failure> {
+/// The build of a site whose only note is `note.md` with the text `text`.
+fn build_of(text: &str) -> Result<Result<Built, BuildError>, Failure> {
     let file = IndexedFile {
         path: "note.md".to_owned(),
         revision: revision_of(text.as_bytes(), "text/markdown")?,
@@ -46,8 +46,12 @@ fn page_of(text: &str) -> Result<Page, Failure> {
             files: &files,
         }],
     };
-    let built = build_release(&site, &texts)?;
-    built
+    Ok(build_release(&site, &texts))
+}
+
+/// The one page of a site whose only note is `note.md` with the text `text`.
+fn page_of(text: &str) -> Result<Page, Failure> {
+    build_of(text)??
         .pages
         .into_iter()
         .next()
@@ -217,4 +221,35 @@ fn void_and_raw_elements_leave_no_text() {
             "the content of a self-closed {hidden} element is removed: {clean}"
         );
     }
+}
+
+#[test]
+fn deep_nesting_is_bounded_and_fast() {
+    let deep = sanitise(&("<b>".repeat(300) + "x"));
+    let (opens, _) = tag_counts(&deep, "b");
+    assert!(
+        opens <= 256,
+        "at most 256 elements are open at once: {opens}"
+    );
+    assert!(deep.contains('x'), "the text inside stays");
+
+    let payload = "<b>".repeat(50_000) + &"</i>".repeat(50_000);
+    let started = std::time::Instant::now();
+    let _ = sanitise(&payload);
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "50 000 open elements and 50 000 stray end tags take {elapsed:?}"
+    );
+}
+
+#[test]
+fn html_over_one_mebibyte_fails_the_build() -> Outcome {
+    let built = build_of(&"word ".repeat(230_000))?;
+    assert_eq!(
+        built.as_ref().err().map(|error| error.class),
+        Some("sites.page_too_large"),
+        "a page body over 1 MiB of HTML makes no release"
+    );
+    Ok(())
 }
