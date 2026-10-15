@@ -128,6 +128,17 @@ create table sites.release_assets (
     primary key (release_id, digest)
 );
 
+-- The vault path of each note that a release publishes, by vault connection. A change of one of
+-- these files requests a build of an automatic publication (workspace spec `site-publications`,
+-- "A build starts only from a request or from a selected file change"). Only a published note is
+-- here, so the table keeps the rule that no column holds the path of an unpublished file.
+create table sites.release_sources (
+    release_id     text not null references sites.releases (release_id) on delete cascade,
+    connection_id  uuid not null,
+    path           text not null,
+    primary key (release_id, connection_id, path)
+);
+
 -- The search index of a release (design D8): one row per page. Search reads only the rows of the
 -- current release.
 create table sites.release_search (

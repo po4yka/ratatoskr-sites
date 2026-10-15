@@ -109,12 +109,14 @@ impl<B: SiteBuilds> BuildWorker<B> {
         }
     }
 
-    /// Build `site_id` for each of its request rows.
+    /// Build `site_id` until it has no request row. One build takes every row that is there when
+    /// it starts, and deletes exactly those rows after it, so the requests that arrive while a
+    /// build runs make one more build (workspace design D6).
     async fn drain(&self, site_id: &str) {
         loop {
-            let rows: Result<Vec<(Uuid, Option<Uuid>)>, sqlx::Error> = sqlx::query_as(
-                "select request_id, operation_id from sites.build_requests \
-                 where site_id = $1 order by requested_at, request_id limit 1",
+            let rows: Result<Vec<(Uuid, String, Option<Uuid>)>, sqlx::Error> = sqlx::query_as(
+                "select request_id, origin, operation_id from sites.build_requests \
+                 where site_id = $1 order by requested_at, request_id",
             )
             .bind(site_id)
             .fetch_all(self.database.pool())
@@ -131,14 +133,14 @@ impl<B: SiteBuilds> BuildWorker<B> {
                 site_id: site_id.to_owned(),
                 operation_ids: rows
                     .iter()
-                    .filter_map(|(_, operation)| *operation)
+                    .filter_map(|(_, _, operation)| *operation)
                     .collect(),
-                explicit: true,
+                explicit: rows.iter().any(|(_, origin, _)| origin == "command"),
             };
             if let Err(error) = self.builds.build(&job).await {
                 tracing::info!(%error, class = %error.class(), site_id, "a build made no release");
             }
-            let taken: Vec<Uuid> = rows.iter().map(|(request, _)| *request).collect();
+            let taken: Vec<Uuid> = rows.iter().map(|(request, _, _)| *request).collect();
             if let Err(error) =
                 sqlx::query("delete from sites.build_requests where request_id = any($1)")
                     .bind(&taken)

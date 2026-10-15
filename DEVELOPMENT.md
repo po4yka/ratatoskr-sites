@@ -30,7 +30,10 @@ on a laptop:
 docker run -d --rm --name sites-nats -p 127.0.0.1:4222:4222 nats:2.15.0-alpine -js
 ```
 
-The test makes a stream with a new name for the subjects `evt.sites.release.published.v1` and
+The consumer tests (`build_triggers.rs` and the tests after it) make their own command and event
+streams, with subjects under a prefix of their own, and the four durables on them as Edge makes
+them, so they share no subject with another test. The relay test makes a stream with a new name
+for the subjects `evt.sites.release.published.v1` and
 `evt.platform.operation.reported.v1`, and deletes it at the end. Do not point it at a server that
 holds the stream `ratatoskr_events`, which takes the same subjects.
 
@@ -81,8 +84,10 @@ validates the environment and binds nothing (exit 0 valid, exit 78 invalid).
 | `RATATOSKR__DATABASE__ACQUIRE_TIMEOUT_SECONDS` | `5` | 1 to 60. |
 | `RATATOSKR__ADMIN__BIND` | `127.0.0.1:9472` | The operator listener. |
 | `RATATOSKR__API__LISTEN_ADDRESS` | `127.0.0.1:8100` | The domain API listener. It must differ from the operator listener. |
-| `RATATOSKR__BUS__URL` | none | The NATS server, for example `nats://127.0.0.1:4222`. Without it no outbox relay runs, and the events stay in the outbox. |
+| `RATATOSKR__BUS__URL` | none | The NATS server, for example `nats://127.0.0.1:4222`. Without it no outbox relay runs, the events stay in the outbox, and no durable is read. |
 | `RATATOSKR__BUS__NKEY_SEED_PATH` | none | The nkey seed of the `SITES` identity, `/etc/ratatoskr/sites.nkey` on the host. Every connection uses the inbox prefix `_INBOX_sites`. |
+| `RATATOSKR__BLOBS__ROOT` | `/mnt/nvme/ratatoskr/blobs/ratatoskr-sites` | The pages and assets of each release. |
+| `RATATOSKR__BLOBS__NOTES_ROOT` | `/mnt/nvme/ratatoskr/blobs/ratatoskr-notes` | The note bytes, read only. |
 | `RATATOSKR__SHUTDOWN__GRACE_SECONDS` | `10` | How long in-flight requests may take after SIGTERM, 1 to 60. |
 | `RATATOSKR__TELEMETRY__LOG_FORMAT` | `text` | `text` or `json`. |
 | `RATATOSKR__TELEMETRY__LOG_FILTER` | `info` | A tracing `EnvFilter` directive string. |

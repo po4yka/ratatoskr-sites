@@ -22,3 +22,15 @@ pub trait NotesIndex: Send + Sync {
         connection_id: Uuid,
     ) -> impl Future<Output = Result<Vec<IndexedFile>, IndexUnavailable>> + Send;
 }
+
+/// The index in production until the notes internal index route exists (workspace tasks 4.1 to
+/// 4.5): it is always unavailable, so a build fails with `sites.notes_index_unavailable` and a note
+/// change is delivered again later.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnavailableIndex;
+
+impl NotesIndex for UnavailableIndex {
+    async fn files(&self, _connection_id: Uuid) -> Result<Vec<IndexedFile>, IndexUnavailable> {
+        Err(IndexUnavailable)
+    }
+}

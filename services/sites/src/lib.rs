@@ -37,7 +37,11 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::admin::{RuntimeState, admin_router};
 use crate::config::{LogFormat, SitesConfig, TelemetryConfig};
+use crate::consumer::{BusTarget, Durable, Durables};
+use crate::notes_blobs::NotesBlobReader;
+use crate::notes_index::UnavailableIndex;
 use crate::outbox::OutboxRelay;
+use crate::release_build::ReleaseBuilder;
 
 /// The whole process lifecycle.
 ///
@@ -45,7 +49,8 @@ use crate::outbox::OutboxRelay;
 /// 2. Initialise logging and the metrics recorder; on failure exit 1.
 /// 3. Connect the database and apply the schema; on failure exit 1.
 /// 4. Bind the operator and the domain listeners; on failure exit 1.
-/// 5. Start the outbox relay when `RATATOSKR__BUS__URL` is set.
+/// 5. Start the outbox relay, the consumers of the durables and the build worker when
+///    `RATATOSKR__BUS__URL` is set.
 /// 6. Serve until SIGTERM or SIGINT, then let in-flight requests finish within the grace window,
 ///    and stop the relay.
 pub async fn run() -> ExitCode {
@@ -141,14 +146,18 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     );
     let api_task = spawn_server(api, Router::new(), stop_receiver);
 
-    // The relay publishes what the outbox holds, also the events of an earlier process.
-    let relay_stop = tokio_util::sync::CancellationToken::new();
-    let relay = config.bus.url.as_ref().map(|url| {
+    // The relay publishes what the outbox holds, also the events of an earlier process. The
+    // consumers of the durables and the build worker run only with a bus too.
+    let bus_stop = tokio_util::sync::CancellationToken::new();
+    let mut bus_tasks = Vec::new();
+    if let Some(url) = &config.bus.url {
         let relay = OutboxRelay::new(database.clone(), url.clone(), config.bus.clone());
-        tokio::spawn(relay.run(relay_stop.clone()))
-    });
-    if relay.is_none() {
-        tracing::info!("RATATOSKR__BUS__URL is not set; the outbox is not relayed");
+        bus_tasks.push(tokio::spawn(relay.run(bus_stop.clone())));
+        bus_tasks.extend(start_pipeline(config, &database, url, &bus_stop));
+    } else {
+        tracing::info!(
+            "RATATOSKR__BUS__URL is not set; the outbox is not relayed and no durable is read"
+        );
     }
 
     runtime.mark_started();
@@ -170,13 +179,46 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     })
     .await
     .is_ok();
-    relay_stop.cancel();
-    if let Some(relay) = relay {
-        let _ = relay.await;
-    }
+    bus_stop.cancel();
+    // A build that runs at the stop ends first; the grace window bounds the wait.
+    let _ = tokio::time::timeout(grace, async {
+        for task in bus_tasks {
+            let _ = task.await;
+        }
+    })
+    .await;
     tracing::info!(graceful = drained, "the process stopped");
     database.close().await;
     Ok(())
+}
+
+/// The consumers of the build commands and the note changes, and the build worker. The notes
+/// index is [`UnavailableIndex`] until the notes internal index route exists.
+fn start_pipeline(
+    config: &SitesConfig,
+    database: &Database,
+    url: &str,
+    stop: &tokio_util::sync::CancellationToken,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let builder = ReleaseBuilder::new(
+        database.clone(),
+        UnavailableIndex,
+        NotesBlobReader::new(&config.blobs.notes_root),
+        config.blobs.root.clone(),
+    );
+    let target = BusTarget {
+        url: url.to_owned(),
+        bus: config.bus.clone(),
+    };
+    triggers::start(
+        database,
+        UnavailableIndex,
+        builder,
+        &target,
+        &Durables::production(),
+        &[Durable::ReleaseBuilds, Durable::NoteChanges],
+        stop,
+    )
 }
 
 async fn bind(address: std::net::SocketAddr, name: &str) -> Result<TcpListener, String> {

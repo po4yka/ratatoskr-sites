@@ -1,7 +1,7 @@
 ## 1. Build triggers (workspace tasks 5.22, 5.23)
 
 - [x] 1.1 RED: add `services/sites/tests/build_triggers.rs` with `unrelated_change_starts_no_build`, `changes_during_a_build_coalesce_into_one`, `manual_publication_ignores_file_changes` and `first_release_needs_an_explicit_request`, against a real JetStream (`SITES_TEST_NATS_URL`) with streams and durables that the test provisions as Edge does. The consumers and a build worker that builds every request exist; no rule decides yet. Confirm that the build-count assertion of the last fails because a file change builds a publication that has no release.
-- [ ] 1.2 GREEN: consume `ratatoskr_sites_note_changes` and `ratatoskr_sites_release_builds`, and implement the coalescing worker of workspace design D6 with the first-release rule and the release modes. Verify 1.1.
+- [x] 1.2 GREEN: consume `ratatoskr_sites_note_changes` and `ratatoskr_sites_release_builds`, and implement the coalescing worker of workspace design D6 with the first-release rule and the release modes. Verify 1.1.
 
 ## 2. A disconnected vault (workspace tasks 5.24, 5.25)
 

@@ -51,6 +51,10 @@ pub struct SitesConfig {
     #[serde(default)]
     pub bus: BusConfig,
 
+    /// The sites blob root and the notes blob root.
+    #[serde(default)]
+    pub blobs: BlobsConfig,
+
     /// The graceful stop.
     #[serde(default)]
     pub shutdown: ShutdownConfig,
@@ -136,6 +140,35 @@ impl BusConfig {
     pub const fn inbox_prefix(&self) -> &'static str {
         INBOX_PREFIX
     }
+}
+
+/// `RATATOSKR__BLOBS__*`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlobsConfig {
+    /// The pages and assets of each release. The unit names it in `ReadWritePaths=`.
+    #[serde(default = "default_blob_root")]
+    pub root: PathBuf,
+    /// The note bytes of `ratatoskr-notes`, read only through the group `ratatoskr-notes-blobs`.
+    #[serde(default = "default_notes_root")]
+    pub notes_root: PathBuf,
+}
+
+impl Default for BlobsConfig {
+    fn default() -> Self {
+        Self {
+            root: default_blob_root(),
+            notes_root: default_notes_root(),
+        }
+    }
+}
+
+fn default_blob_root() -> PathBuf {
+    PathBuf::from("/mnt/nvme/ratatoskr/blobs/ratatoskr-sites")
+}
+
+fn default_notes_root() -> PathBuf {
+    PathBuf::from("/mnt/nvme/ratatoskr/blobs/ratatoskr-notes")
 }
 
 /// `RATATOSKR__SHUTDOWN__*`.

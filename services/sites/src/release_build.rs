@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use ratatoskr_sites_contracts::{PublicationId, SiteId};
 use ratatoskr_sites_persistence::Database;
-use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, PublicationMode};
+use ratatoskr_sites_publications::{BuildError, IndexedFile, Publication, PublicationMode, select};
 use ratatoskr_sites_release::{Built, PublicationInput, SiteInput, build_release, selected_notes};
 use uuid::Uuid;
 
@@ -71,6 +71,9 @@ pub enum BuildFailure {
     /// The site does not exist.
     #[error("the site does not exist")]
     SiteNotFound,
+    /// The build reads no publication.
+    #[error("the build reads no publication of the site")]
+    PublicationNotFound,
     /// A stored publication does not satisfy the contract.
     #[error("a publication of the site is not valid")]
     PublicationInvalid,
@@ -97,6 +100,7 @@ impl BuildFailure {
     pub fn class(&self) -> String {
         match self {
             Self::SiteNotFound => "sites.site_not_found".to_owned(),
+            Self::PublicationNotFound => "sites.publication_not_found".to_owned(),
             Self::PublicationInvalid => "sites.publication_invalid".to_owned(),
             Self::IndexUnavailable => "sites.notes_index_unavailable".to_owned(),
             Self::Note(error) => format!("sites.{}", error.class()),
@@ -180,7 +184,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Database)?;
         let owner = owner.ok_or(BuildFailure::SiteNotFound)?;
-        let outcome = self.build_site(&job.site_id, owner).await;
+        let outcome = self.build_site(&job.site_id, owner, job.explicit).await;
         for &operation_id in &job.operation_ids {
             if let Err(error) = report(&self.database, owner, operation_id, &outcome).await {
                 // The outcome of the build stays the answer; Platform's stale-operation reaper
@@ -191,7 +195,15 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         outcome
     }
 
-    async fn build_site(&self, site_id: &str, owner: Uuid) -> Result<BuildOutcome, BuildFailure> {
+    /// Build `site_id`. A build that is not `explicit` reads only the publications that the current
+    /// release contains, so the first release of a publication always comes from a command
+    /// (workspace design D6).
+    async fn build_site(
+        &self,
+        site_id: &str,
+        owner: Uuid,
+        explicit: bool,
+    ) -> Result<BuildOutcome, BuildFailure> {
         type Row = (
             String,
             Uuid,
@@ -204,9 +216,13 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         let rows: Vec<Row> = sqlx::query_as(
             "select publication_id, connection_id, mode, included_folders, excluded_folders, \
              included_tags, frontmatter_allow from sites.publications where site_id = $1 \
+             and ($2 or publication_id in (select jsonb_array_elements_text(convert_from( \
+             r.document, 'UTF8')::jsonb -> 'publication_ids') from sites.current_releases c \
+             join sites.releases r on r.release_id = c.release_id where c.site_id = $1)) \
              order by publication_id",
         )
         .bind(site_id)
+        .bind(explicit)
         .fetch_all(self.database.pool())
         .await
         .map_err(BuildFailure::Database)?;
@@ -226,6 +242,9 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 },
             )
             .collect();
+        if rows.is_empty() {
+            return Err(BuildFailure::PublicationNotFound);
+        }
         let mut indexes: BTreeMap<Uuid, Vec<IndexedFile>> = BTreeMap::new();
         for row in &rows {
             if let std::collections::btree_map::Entry::Vacant(vacant) =
@@ -240,8 +259,17 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             }
         }
         let site = site_input(site_id, &rows, &indexes)?;
+        let sources: Vec<(Uuid, String)> = rows
+            .iter()
+            .zip(&site.publications)
+            .flat_map(|(row, input)| {
+                select(&input.publication, input.files)
+                    .into_iter()
+                    .map(|path| (row.connection_id, path))
+            })
+            .collect();
         let built = self.render(&site).await?;
-        self.store(site_id, owner, &built).await
+        self.store(site_id, owner, &built, &sources).await
     }
 
     /// Read every selected note with the bound of the reader, and build the release.
@@ -267,6 +295,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         site_id: &str,
         owner: Uuid,
         built: &Built,
+        sources: &[(Uuid, String)],
     ) -> Result<BuildOutcome, BuildFailure> {
         let document = serde_jcs::to_vec(&built.release).map_err(|error| {
             BuildFailure::Build(BuildError {
@@ -301,7 +330,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
                 .await
                 .map_err(BuildFailure::Store)?;
         }
-        self.record(site_id, owner, &release_id, &document, built)
+        self.record(site_id, owner, &release_id, &document, built, sources)
             .await?;
         Ok(BuildOutcome {
             release_id,
@@ -319,6 +348,7 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         release_id: &str,
         document: &[u8],
         built: &Built,
+        sources: &[(Uuid, String)],
     ) -> Result<(), BuildFailure> {
         let event_id = Uuid::now_v7();
         let envelope = events::release_published(event_id, owner, release_id, &built.release)
@@ -369,6 +399,18 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .bind(asset.sha256.as_str())
             .bind(asset.media_type.as_str())
             .bind(i64::try_from(asset.size_bytes).unwrap_or(i64::MAX))
+            .execute(&mut *transaction)
+            .await
+            .map_err(BuildFailure::Database)?;
+        }
+        for (connection_id, path) in sources {
+            sqlx::query(
+                "insert into sites.release_sources (release_id, connection_id, path) \
+                 values ($1, $2, $3) on conflict do nothing",
+            )
+            .bind(release_id)
+            .bind(connection_id)
+            .bind(path)
             .execute(&mut *transaction)
             .await
             .map_err(BuildFailure::Database)?;
