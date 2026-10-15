@@ -113,14 +113,10 @@ fn reference_node(node: &Node) -> Option<PageNode> {
                 anchor: anchor.clone(),
             },
         },
-        Node::AssetEmbed {
-            sha256,
-            media_type,
-            alt,
-        } => PageNode::Embed {
+        Node::AssetEmbed { blob, alt } => PageNode::Embed {
             target: EmbedTarget::Asset {
-                sha256: sha256.clone(),
-                media_type: media_type.clone(),
+                sha256: blob.digest.hex.clone(),
+                media_type: blob.media_type.clone(),
                 alt: alt.clone(),
             },
         },
@@ -314,13 +310,10 @@ fn write_reference(html: &mut String, node: &Node) {
                 escape(slug.as_str())
             );
         }
-        Node::AssetEmbed {
-            sha256,
-            media_type,
-            alt,
-        } => {
+        Node::AssetEmbed { blob, alt } => {
+            let sha256 = &blob.digest.hex;
             let src = format!("assets/{}", sha256.as_str());
-            if media_type.as_str().starts_with("image/") {
+            if blob.media_type.as_str().starts_with("image/") {
                 let alt = alt.as_deref().unwrap_or("");
                 let _ = write!(html, "<img src=\"{src}\" alt=\"{}\">", escape(alt));
             } else {

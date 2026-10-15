@@ -170,8 +170,7 @@ fn embed(url: &str, wiki: bool, children: &[Node], scope: &Scope<'_>) -> Option<
 
 fn asset(blob: &BlobRef, alt: Option<String>) -> Node {
     Node::AssetEmbed {
-        sha256: blob.digest.hex.clone(),
-        media_type: blob.media_type.clone(),
+        blob: blob.clone(),
         alt,
     }
 }

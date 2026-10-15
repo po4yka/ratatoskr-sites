@@ -203,13 +203,23 @@ fn render_note(
     let tree = filter::filter(tree::parse(&body), &scope);
 
     let mut links = BTreeSet::new();
-    let mut assets = BTreeMap::new();
-    collect(&tree, &mut links, &mut assets);
-    let blobs = attachments
+    let mut used: BTreeMap<String, BlobRef> = BTreeMap::new();
+    collect(&tree, &mut links, &mut used);
+    // The metadata of an asset comes from the attachment that the filter resolved for this page,
+    // never from another attachment with the same bytes.
+    let assets = used
         .values()
-        .filter(|blob| assets.contains_key(blob.digest.hex.as_str()))
-        .cloned()
+        .map(|blob| {
+            (
+                blob.digest.hex.as_str().to_owned(),
+                AssetRef {
+                    sha256: blob.digest.hex.clone(),
+                    media_type: blob.media_type.clone(),
+                },
+            )
+        })
         .collect();
+    let blobs = used.into_values().collect();
     Ok(Rendered {
         slug: slug.clone(),
         title: title_of(note.file)?,
@@ -246,7 +256,7 @@ fn publishable_attachments(
 }
 
 /// The slugs that the filtered tree links to or embeds, and the assets that it embeds.
-fn collect(nodes: &[Node], links: &mut BTreeSet<Slug>, assets: &mut BTreeMap<String, AssetRef>) {
+fn collect(nodes: &[Node], links: &mut BTreeSet<Slug>, assets: &mut BTreeMap<String, BlobRef>) {
     for node in nodes {
         match node {
             Node::PageLink { slug, children, .. } => {
@@ -256,16 +266,10 @@ fn collect(nodes: &[Node], links: &mut BTreeSet<Slug>, assets: &mut BTreeMap<Str
             Node::PageEmbed { slug, .. } => {
                 links.insert(slug.clone());
             }
-            Node::AssetEmbed {
-                sha256, media_type, ..
-            } => {
-                assets.insert(
-                    sha256.as_str().to_owned(),
-                    AssetRef {
-                        sha256: sha256.clone(),
-                        media_type: media_type.clone(),
-                    },
-                );
+            Node::AssetEmbed { blob, .. } => {
+                assets
+                    .entry(blob.digest.hex.as_str().to_owned())
+                    .or_insert_with(|| blob.clone());
             }
             Node::Callout {
                 title, children, ..
@@ -336,7 +340,8 @@ fn invalid(path: &str) -> BuildError {
 }
 
 /// The pages with their backlinks, and the release document.
-fn assemble(site: &SiteInput<'_>, rendered: Vec<Rendered>) -> Result<Built, BuildError> {
+fn assemble(site: &SiteInput<'_>, mut rendered: Vec<Rendered>) -> Result<Built, BuildError> {
+    rendered.sort_by(|left, right| left.slug.cmp(&right.slug));
     let mut backlinks: BTreeMap<Slug, BTreeSet<Slug>> = BTreeMap::new();
     for page in &rendered {
         for target in &page.links {
@@ -350,7 +355,9 @@ fn assemble(site: &SiteInput<'_>, rendered: Vec<Rendered>) -> Result<Built, Buil
     let mut pages = Vec::with_capacity(rendered.len());
     for page in rendered {
         for blob in &page.blobs {
-            blobs.insert(blob.digest.hex.as_str().to_owned(), blob.clone());
+            blobs
+                .entry(blob.digest.hex.as_str().to_owned())
+                .or_insert_with(|| blob.clone());
         }
         let page = Page {
             backlinks: backlinks
@@ -369,7 +376,6 @@ fn assemble(site: &SiteInput<'_>, rendered: Vec<Rendered>) -> Result<Built, Buil
         let bytes = serde_json::to_vec(&page).map_err(|_| invalid(page.slug.as_str()))?;
         pages.push(BuiltPage { page, bytes });
     }
-    pages.sort_by(|left, right| left.page.slug.cmp(&right.page.slug));
     let release = release_document(site, &pages, &blobs)?;
     Ok(Built {
         release,

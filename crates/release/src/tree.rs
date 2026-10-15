@@ -2,7 +2,7 @@
 //! and collector reads only the filtered tree (workspace design D5).
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
-use ratatoskr_identifiers::{DigestHex, MediaType};
+use ratatoskr_identifiers::BlobRef;
 use ratatoskr_sites_contracts::{Anchor, CalloutFold, ImageUrl, LinkUrl, Slug, TableAlign};
 
 /// One node of the tree of a note.
@@ -75,9 +75,9 @@ pub(crate) enum Node {
         slug: Slug,
         anchor: Option<Anchor>,
     },
+    /// An attachment that the filter resolved: `blob` is the revision of that attachment.
     AssetEmbed {
-        sha256: DigestHex,
-        media_type: MediaType,
+        blob: BlobRef,
         alt: Option<String>,
     },
     ExternalLink {
