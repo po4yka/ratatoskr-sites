@@ -8,7 +8,7 @@ use ratatoskr_sites::release_build::BuildFailure;
 use ratatoskr_sites_contracts::Release;
 use ratatoskr_sites_release::sha256_hex;
 use serde_json::Value;
-use support::{Failure, Fixture, blob_path, request};
+use support::{Failure, Fixture, SITE, blob_path, request};
 use uuid::Uuid;
 
 type Outcome = Result<(), Failure>;
@@ -227,5 +227,49 @@ async fn report_failure_keeps_the_build_error() -> Outcome {
         Some("sites.slug_collision"),
         "a report that cannot be written does not replace the error of the build"
     );
+    fixture.cleanup().await
+}
+
+#[tokio::test]
+async fn build_that_loses_the_race_switches_nothing() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let first = fixture.builder().build(&request(None)).await?;
+
+    // A build of the same content finds the first release current and waits before the lock.
+    let late_builder = fixture.builder();
+    let pause = late_builder.pause_before_lock();
+    let late = tokio::spawn(async move {
+        late_builder
+            .build(&request(None))
+            .await
+            .map_err(|error| error.to_string())
+    });
+    pause.reached.notified().await;
+
+    // Meanwhile another build makes another release current.
+    fixture.change(
+        "other.md",
+        "---\npublish: true\n---\nThe other page, changed.\n",
+    )?;
+    let second = fixture.builder().build(&request(None)).await?;
+    assert_ne!(second.release_id, first.release_id);
+
+    pause.release.notify_one();
+    let late = late.await??;
+    let (current, _) =
+        ratatoskr_sites::release_read::current_release(&fixture.database.database, SITE)
+            .await?
+            .ok_or("the site has a release")?;
+    assert_eq!(
+        current, second.release_id,
+        "the build that lost the race does not switch the site back"
+    );
+    assert!(!late.new_release, "it makes no new release: {late:?}");
+    let events: i64 = sqlx::query_scalar(
+        "select count(*) from sites.outbox where subject = 'evt.sites.release.published.v1'",
+    )
+    .fetch_one(fixture.database.pool())
+    .await?;
+    assert_eq!(events, 2, "and it announces nothing");
     fixture.cleanup().await
 }

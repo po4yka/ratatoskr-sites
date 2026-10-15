@@ -155,6 +155,8 @@ pub struct ReleaseBuilder<I> {
     index: I,
     notes: NotesBlobReader,
     blobs: SitesBlobs,
+    #[cfg(feature = "test-support")]
+    pause: std::sync::Arc<std::sync::Mutex<Option<crate::servable::RefreshPause>>>,
 }
 
 /// A publication row of the site.
@@ -192,7 +194,21 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             index,
             notes: notes.with_max_bytes(MAX_NOTE_BYTES),
             blobs: SitesBlobs::new(blob_root),
+            #[cfg(feature = "test-support")]
+            pause: std::sync::Arc::default(),
         }
+    }
+
+    /// Stop the next build that finds its release current between that read and the lock of the
+    /// current-release row. Built only with the feature `test-support`.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn pause_before_lock(&self) -> crate::servable::RefreshPause {
+        let pause = crate::servable::RefreshPause::default();
+        if let Ok(mut held) = self.pause.lock() {
+            *held = Some(pause.clone());
+        }
+        pause
     }
 
     /// Build the release of `request.site_id`, and report the operation of the request.
@@ -462,6 +478,14 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         if current.as_deref() == Some(release_id.as_str()) {
             // The same document can come from other publications: the provenance of its sources,
             // pages, assets and search rows is written again, so a removed publication leaves it.
+            #[cfg(feature = "test-support")]
+            {
+                let pause = self.pause.lock().ok().and_then(|mut held| held.take());
+                if let Some(pause) = pause {
+                    pause.reached.notify_one();
+                    pause.release.notified().await;
+                }
+            }
             let mut transaction = self
                 .database
                 .pool()
