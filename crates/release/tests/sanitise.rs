@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use ratatoskr_sites_contracts::{Page, PublicationId, SiteId};
 use ratatoskr_sites_publications::test_support::revision_of;
 use ratatoskr_sites_publications::{IndexedFile, Publication, PublicationMode};
+use ratatoskr_sites_release::sanitise::sanitise;
 use ratatoskr_sites_release::{PublicationInput, SiteInput, build_release};
 use serde_json::Value;
 
@@ -115,4 +116,105 @@ fn dataview_block_is_rendered_as_code() -> Outcome {
         page.html
     );
     Ok(())
+}
+
+/// How often `<name` opens and `</name>` closes the element `name` in `html`.
+fn tag_counts(html: &str, name: &str) -> (usize, usize) {
+    let opening = format!("<{name}");
+    let opens = html
+        .match_indices(&opening)
+        .filter(|(at, _)| {
+            html.get(at + opening.len()..)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(|next| next == '>' || next == ' ' || next == '/')
+        })
+        .count();
+    (opens, html.matches(&format!("</{name}>")).count())
+}
+
+/// The non-void elements of the allowlist.
+const NON_VOID: [&str; 39] = [
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "code",
+    "dd",
+    "del",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "i",
+    "kbd",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "pre",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "u",
+];
+
+fn assert_balanced(html: &str) {
+    for name in NON_VOID {
+        let (opens, closes) = tag_counts(html, name);
+        assert_eq!(opens, closes, "<{name}> is balanced in {html}");
+    }
+}
+
+#[test]
+fn self_closing_non_void_elements_are_balanced() {
+    for payload in [
+        "<a href=\"https://example.test\" />text",
+        "<div/>text",
+        "<table/>text",
+        "<p/>text<b/>bold",
+    ] {
+        let once = sanitise(payload);
+        assert_balanced(&once);
+        assert_eq!(
+            sanitise(&once),
+            once,
+            "sanitising twice changes nothing: {payload}"
+        );
+    }
+}
+
+#[test]
+fn void_and_raw_elements_leave_no_text() {
+    let embed = sanitise("<embed src=\"https://example.test/x\">after");
+    assert!(
+        !embed.contains("<embed") && embed.contains("after"),
+        "{embed}"
+    );
+    for (payload, hidden) in [
+        ("<script/>alert(1)</script>after", "alert"),
+        ("<style/>p{color:red}</style>after", "color"),
+    ] {
+        let clean = sanitise(payload);
+        assert!(
+            !clean.contains(hidden) && clean.contains("after"),
+            "the content of a self-closed {hidden} element is removed: {clean}"
+        );
+    }
 }

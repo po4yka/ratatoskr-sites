@@ -104,7 +104,8 @@ const URL_ATTRIBUTES: [&str; 2] = ["href", "src"];
 const SCHEMES: [&str; 3] = ["https", "http", "mailto"];
 
 /// The body of `html` after the allowlist.
-pub(crate) fn sanitise(html: &str) -> String {
+#[must_use]
+pub fn sanitise(html: &str) -> String {
     let tokenizer = Tokenizer::new(Writer::default(), TokenizerOpts::default());
     let input = BufferQueue::default();
     input.push_back(StrTendril::from_slice(html));

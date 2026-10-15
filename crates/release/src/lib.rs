@@ -12,7 +12,7 @@
 
 mod filter;
 mod render;
-mod sanitise;
+pub mod sanitise;
 mod source;
 mod tree;
 
