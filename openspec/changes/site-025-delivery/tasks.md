@@ -86,3 +86,16 @@
 - [x] 13.3 RED (5.64): add comment canaries to `release_sources.rs` (an alias and a heading subpath of a link inside a `%%` comment). Confirm that the canary assertion fails because the projection keeps every link whose target is published.
 - [x] 13.4 GREEN (5.65): store only the links and embeds that the rendered page resolved, without `display_text`. Verify 13.3.
 - [x] 13.5 (5.66) Correct the comment on the removal requests that wait, design 14 for manual publications, and document a note that a manual and an automatic publication both select. No test: documentation.
+
+## 14. Fifth review (workspace tasks 5.67 to 5.73)
+
+A released row is eligible for a publication when the publication selected it at release time and
+its current configuration still selects it: a build from the release can only shrink a publication.
+
+- [x] 14.1 RED (5.67): add `services/sites/tests/release_narrowing.rs::narrowed_publication_drops_its_pages_in_a_build_from_the_release`: a PUT that adds `team` to the excluded folders of a released manual publication, and a PUT that drops its included tag `Public`, each remove their notes in the removal build. Confirm that the slug assertion fails because the build from the release takes every stored row of the publication.
+- [ ] 14.2 GREEN (5.68): store with each note row whether its `publish` value names the site and the tags (lower case, without `#`) that matched an included tag of a selecting publication, and select its stored rows again with the current configuration of each publication. Verify 14.1.
+- [ ] 14.3 RED (5.69): add `release_narrowing.rs::deleted_publication_takes_its_attachment`: `secret/x.png`, embedded by a note that `pub-a` (`shared`) and `pub-r` (excludes `secret`) both select, is no longer served at once after `DELETE` of `pub-a`, and the removal release has no trace of it. Confirm that the asset assertion fails because the asset carries the publications of the page that uses it.
+- [ ] 14.4 GREEN (5.70): give each attachment and asset the publications that selected a page that uses it and that do not exclude it, and give a released attachment only to those publications. Verify 14.3.
+- [ ] 14.5 RED (5.71): add `release_sources.rs::every_source_row_names_its_publications` (no row without publications; the schema refuses one) and `release_sources.rs::stored_frontmatter_holds_no_publish` (also when the allowlist names `publish`). Confirm that each fails on its assertion.
+- [ ] 14.6 GREEN (5.72): a CHECK that `publication_ids` is not empty, and no `publish` key in the stored frontmatter. Verify 14.5.
+- [ ] 14.7 (5.73) Document that the stored frontmatter keys are the union of the allowlists of the selecting publications and that a page renders only the current allowlist of the publication that renders it. No test: documentation.
