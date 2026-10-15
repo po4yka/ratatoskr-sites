@@ -171,9 +171,9 @@ create table sites.release_sources (
     -- build from the release gives a publication only the rows that name it.
     publication_ids text[] not null check (cardinality(publication_ids) > 0),
     -- The selection inputs of a note, limited to published facts: whether its `publish` value
-    -- named the site, and its tags (lower case, without `#`) that matched an included tag of a
-    -- selecting publication. A build from the release selects again with the current
-    -- configuration, so a publication can only shrink.
+    -- named the site, and its tags (without `#`, as the selection compares them) that matched an
+    -- included tag of a selecting publication. A build from the release selects again with the
+    -- current configuration, so a publication can only shrink.
     names_site      boolean not null default false,
     selection_tags  text[]  not null default '{}',
     primary key (release_id, connection_id, path)

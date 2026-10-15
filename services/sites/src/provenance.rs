@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ratatoskr_sites_publications::{BuildError, IndexedFile, assign_slugs, select};
+use ratatoskr_sites_publications::{
+    BuildError, IndexedFile, assign_slugs, select, tag_key, tag_matches,
+};
 use ratatoskr_sites_release::{
     Built, DEFAULT_FRONTMATTER_ALLOWLIST, PublicationInput, SiteInput, may_publish_attachment,
     selected_notes,
@@ -29,8 +31,8 @@ struct Source {
     /// Whether the `publish` value of the note names the site: `true`, the site id, or a list
     /// with the site id.
     names_site: bool,
-    /// The tags of the note, in lower case and without `#`, that matched an included tag of a
-    /// selecting publication.
+    /// The tags of the note, in the form that the selection compares (without `#`), that matched an
+    /// included tag of a selecting publication.
     selection_tags: BTreeSet<String>,
 }
 
@@ -297,18 +299,13 @@ fn names_site(file: &IndexedFile, site_id: &str) -> bool {
     }
 }
 
-/// The tags of `file`, in lower case and without `#`, that match one of `included`, as the
-/// selection compares them.
+/// The tags of `file`, in the form that the selection compares ([`tag_key`]), that match one of
+/// `included`.
 fn matched_tags(file: &IndexedFile, included: &[String]) -> Vec<String> {
     file.tags
         .iter()
-        .map(|tag| tag.trim_start_matches('#'))
-        .filter(|tag| {
-            included
-                .iter()
-                .any(|included| included.trim_start_matches('#').eq_ignore_ascii_case(tag))
-        })
-        .map(str::to_lowercase)
+        .filter(|tag| included.iter().any(|included| tag_matches(included, tag)))
+        .map(|tag| tag_key(tag).to_owned())
         .collect()
 }
 

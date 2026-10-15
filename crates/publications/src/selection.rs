@@ -109,9 +109,23 @@ fn flag(publication: &Publication, file: &IndexedFile) -> Flag {
 /// Whether the note tag `tag` (with its `#`) is an included tag of the publication. Tags compare
 /// without case, as in Obsidian, and a nested tag `#public/sub` is not the tag `public`.
 fn has_included_tag(publication: &Publication, tag: &str) -> bool {
-    let tag = tag.strip_prefix('#').unwrap_or(tag);
     publication
         .included_tags
         .iter()
-        .any(|included| included.trim_start_matches('#').eq_ignore_ascii_case(tag))
+        .any(|included| tag_matches(included, tag))
+}
+
+/// The form of a tag that the selection compares: the tag without its leading `#`. The sources of
+/// a release store a tag in this form, so a build from the release compares it as the first
+/// build did.
+#[must_use]
+pub fn tag_key(tag: &str) -> &str {
+    tag.trim_start_matches('#')
+}
+
+/// Whether the note tag `tag` is the included tag `included`: their [`tag_key`]s are equal without
+/// ASCII case, as in Obsidian.
+#[must_use]
+pub fn tag_matches(included: &str, tag: &str) -> bool {
+    tag_key(included).eq_ignore_ascii_case(tag_key(tag))
 }

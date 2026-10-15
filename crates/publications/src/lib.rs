@@ -16,5 +16,5 @@ pub mod test_support;
 pub use crate::error::BuildError;
 pub use crate::index::{IndexedFile, IndexedHeading, IndexedLink, LinkForm};
 pub use crate::paths::{in_folder, path_key};
-pub use crate::selection::{Publication, PublicationMode, select};
+pub use crate::selection::{Publication, PublicationMode, select, tag_key, tag_matches};
 pub use crate::slug::assign_slugs;
