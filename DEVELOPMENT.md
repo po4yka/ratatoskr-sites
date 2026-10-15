@@ -22,6 +22,18 @@ create one database per test and drop it at the end. They read
 database that `compose.yaml` starts. If the postgres of another Ratatoskr repository uses port
 5432, stop it first or set `SITES_TEST_DATABASE_URL`.
 
+The test of the outbox relay (`services/sites/tests/outbox_relay.rs`) needs a NATS server with
+JetStream. It reads `SITES_TEST_NATS_URL`, and the default is `nats://127.0.0.1:4222`. CI starts one;
+on a laptop:
+
+```bash
+docker run -d --rm --name sites-nats -p 127.0.0.1:4222:4222 nats:2.15.0-alpine -js
+```
+
+The test makes a stream with a new name for the subjects `evt.sites.release.published.v1` and
+`evt.platform.operation.reported.v1`, and deletes it at the end. Do not point it at a server that
+holds the stream `ratatoskr_events`, which takes the same subjects.
+
 ### Rust — also the CI gate
 
 The gate is `.github/workflows/ci.yml`; this list and that job's `run:` steps are one list, and a step in ci.yml fails when they differ. Run them in this order before you declare a change done:

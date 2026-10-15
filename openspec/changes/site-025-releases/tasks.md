@@ -43,3 +43,4 @@
 - [x] 8.6 GREEN (5.21c): cut the message of a report to a safe message, and log a failed report instead of returning it. Verify 8.5.
 - [x] 8.7 RED (5.21d): add `privacy.rs::asset_metadata_comes_from_the_used_attachment`, with a second attachment of the same bytes and another media type that no page uses. Confirm that the media-type assertion fails because the release takes the metadata of the other attachment.
 - [x] 8.8 GREEN (5.21d): take the media type, the size and the blob of an asset from the attachment that the filter resolved for the page. Verify 8.7.
+- [x] 8.9 (5.21e): add `services/sites/tests/outbox_relay.rs::relay_publishes_each_row_once` (against a real JetStream; CI starts one) and `release_switch.rs::failed_switch_changes_nothing`. No failing test first: the code exists, so these are pin tests; each is proven by a mutation (no `Nats-Msg-Id`: 4 messages instead of 2; commit before the outbox row: the current release changes).

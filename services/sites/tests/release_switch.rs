@@ -115,3 +115,41 @@ async fn published_event_carries_no_content() -> Outcome {
     }
     fixture.cleanup().await
 }
+
+#[tokio::test]
+async fn failed_switch_changes_nothing() -> Outcome {
+    let fixture = Fixture::new().await?;
+    let builder = fixture.builder();
+    let first = builder.build(&request(None)).await?;
+
+    fixture.change(
+        "other.md",
+        "---\npublish: true\n---\nThe other page, changed.\n",
+    )?;
+    // The outbox cannot take the release event, so the transaction of the switch fails.
+    sqlx::query("alter table sites.outbox rename to outbox_gone")
+        .execute(fixture.database.pool())
+        .await?;
+    let second = builder.build(&request(None)).await;
+    assert!(second.is_err(), "the build fails");
+
+    let (current, _) = current_release(&fixture.database.database, SITE)
+        .await?
+        .ok_or("the site has a current release")?;
+    assert_eq!(
+        current, first.release_id,
+        "the current release did not change"
+    );
+    assert_eq!(
+        fixture.release_count().await?,
+        1,
+        "no row of the second release stays"
+    );
+    let pages: i64 =
+        sqlx::query_scalar("select count(*) from sites.release_pages where release_id <> $1")
+            .bind(&first.release_id)
+            .fetch_one(fixture.database.pool())
+            .await?;
+    assert_eq!(pages, 0, "no page row of the second release stays");
+    fixture.cleanup().await
+}
