@@ -1,0 +1,30 @@
+[package]
+name        = "ratatoskr-sites"
+description = "The Ratatoskr Sites deployable: publications, releases and the Content Delivery API."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[[bin]]
+name = "ratatoskr-sites"
+path = "src/main.rs"
+
+[dependencies]
+ratatoskr-sites-persistence.workspace = true
+ratatoskr-identifiers.workspace       = true
+ratatoskr-sites-contracts.workspace   = true
+axum.workspace                        = true
+figment.workspace                     = true
+metrics-exporter-prometheus.workspace = true
+secrecy.workspace                     = true
+serde.workspace                       = true
+serde_json.workspace                  = true
+thiserror.workspace                   = true
+tokio.workspace                       = true
+tracing.workspace                     = true
+tracing-subscriber.workspace          = true
+
+[lints]
+workspace = true

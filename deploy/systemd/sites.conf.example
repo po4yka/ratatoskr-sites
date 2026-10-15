@@ -1,0 +1,12 @@
+# Operator example for ratatoskr-sites, a systemd EnvironmentFile (EnvironmentFile=/etc/ratatoskr/sites.conf).
+# Copy it to /etc/ratatoskr/sites.conf, replace every CHANGE-ME, and keep the file readable by the service user only.
+# `ratatoskr-sites check-config` validates it without starting anything (exit 0 valid, exit 78 invalid).
+
+# Operator listener: /health/live, /health/ready, /metrics, /version. Host only; allocated in docs/DEPLOYMENT_TARGET.md of ratatoskr-workspace.
+RATATOSKR__ADMIN__BIND=127.0.0.1:9472
+
+# SECRET: the URL carries the password.
+# The shared database `ratatoskr` and the role `ratatoskr_sites`, which deploy/postgres/role.sql creates (a PostgreSQL administrator runs it once, then sets the password with `\password ratatoskr_sites`). The service creates its own schema, `sites`, on the first start.
+RATATOSKR__DATABASE__URL=postgres://ratatoskr_sites:CHANGE-ME@127.0.0.1:5432/ratatoskr
+
+RATATOSKR__TELEMETRY__LOG_FORMAT=json

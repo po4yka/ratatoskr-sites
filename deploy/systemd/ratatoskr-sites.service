@@ -1,0 +1,66 @@
+[Unit]
+Description=Ratatoskr Sites
+Documentation=https://github.com/po4yka/ratatoskr-sites/blob/main/DEVELOPMENT.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+# Stopped and restarted with the rest of the deployment; see ratatoskr.target in ratatoskr-platform.
+PartOf=ratatoskr.target
+
+[Service]
+Type=exec
+# The user and its group come from deploy/sysusers.d/ratatoskr-sites.conf.
+User=ratatoskr-sites
+Group=ratatoskr-sites
+EnvironmentFile=/etc/ratatoskr/sites.conf
+ExecStartPre=/usr/local/bin/ratatoskr-sites check-config
+ExecStart=/usr/local/bin/ratatoskr-sites
+Restart=always
+RestartSec=10s
+KillSignal=SIGTERM
+# Longer than the longest shutdown window that the service accepts
+# (RATATOSKR__SHUTDOWN__GRACE_SECONDS, at most 60), so systemd never kills a clean stop.
+TimeoutStopSec=70s
+
+StandardOutput=append:/mnt/nvme/ratatoskr/logs/sites.log
+StandardError=append:/mnt/nvme/ratatoskr/logs/sites.log
+
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=128
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+# `ratatoskr` is the shared group of every Ratatoskr unit: /etc/ratatoskr is 0750 root:ratatoskr and
+# /mnt/nvme/ratatoskr/logs 0770 root:ratatoskr (ratatoskr-platform deploy/README.md step 1), so
+# without it this process cannot reach its own nkey seed. `Group=` sets the primary group only.
+SupplementaryGroups=ratatoskr
+# The sites blob root holds the pages and the assets of each release. The service reads note bytes
+# from the notes blob root and never writes there.
+ReadWritePaths=/mnt/nvme/ratatoskr/blobs/ratatoskr-sites
+ReadOnlyPaths=/etc/ratatoskr/sites.nkey /mnt/nvme/ratatoskr/blobs/ratatoskr-notes
+
+[Install]
+WantedBy=ratatoskr.target
