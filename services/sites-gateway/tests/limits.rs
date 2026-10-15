@@ -104,3 +104,66 @@ async fn an_oversized_forwarded_body_gets_413_without_a_forward() -> Outcome {
     assert_eq!(edge.seen().len(), 0, "the stub Edge receives no request");
     Ok(())
 }
+
+/// A gateway over one site with one token for each key and one token a second.
+fn one_token(edge: &StubEdge) -> Result<(Tree, axum::Router), Failure> {
+    let tree = Tree::new()?;
+    tree.site("site-a", "a.example", true)?;
+    tree.deploy(
+        "site-a",
+        &commit('1'),
+        &[("index.html", b"<title>a</title>", false)],
+        true,
+    )?;
+    tree.activate("site-a", &commit('1'))?;
+    let mut config = tree.config();
+    config.edge.url.clone_from(&edge.url);
+    config.limits.burst = 1;
+    config.limits.rate_per_second = 1;
+    let router = router_of(&ratatoskr_sites_gateway::Gateway::new(config));
+    Ok((tree, router))
+}
+
+/// Review M3: a full table never moves a new key into the shared bucket of the requests without an
+/// address, so many addresses cannot exhaust the budget of the others.
+#[tokio::test]
+async fn a_full_table_evicts_the_least_recently_used_key() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = one_token(&edge)?;
+    let unkeyed = Request::builder()
+        .uri("/")
+        .header("host", "a.example")
+        .body(Body::empty())?;
+    assert_eq!(
+        send(&router, unkeyed).await?.status,
+        200,
+        "the shared bucket spends its token"
+    );
+    // 4096 addresses fill the table of the gateway.
+    for index in 0..4096_u32 {
+        let [_, _, high, low] = index.to_be_bytes();
+        send(&router, from(&format!("10.1.{high}.{low}"))?).await?;
+    }
+    let new = send(&router, from("192.0.2.200")?).await?;
+    assert_eq!(new.status, 200, "a new key gets a bucket of its own");
+    Ok(())
+}
+
+/// Review M3: the IPv6 addresses of one /64 prefix share one bucket.
+#[tokio::test]
+async fn ipv6_clients_share_the_bucket_of_their_64_prefix() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = one_token(&edge)?;
+    assert_eq!(send(&router, from("2001:db8::1")?).await?.status, 200);
+    assert_eq!(
+        send(&router, from("2001:db8::2")?).await?.status,
+        429,
+        "another address of the same /64 shares its bucket"
+    );
+    assert_eq!(
+        send(&router, from("2001:db8:0:1::1")?).await?.status,
+        200,
+        "another /64 has a bucket of its own"
+    );
+    Ok(())
+}
