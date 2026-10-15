@@ -71,6 +71,9 @@ pub enum BuildFailure {
     /// The site does not exist.
     #[error("the site does not exist")]
     SiteNotFound,
+    /// A publication that the build reads is suspended: its vault connection was removed.
+    #[error("a publication of the site is suspended")]
+    PublicationSuspended,
     /// The build reads no publication.
     #[error("the build reads no publication of the site")]
     PublicationNotFound,
@@ -101,6 +104,7 @@ impl BuildFailure {
         match self {
             Self::SiteNotFound => "sites.site_not_found".to_owned(),
             Self::PublicationNotFound => "sites.publication_not_found".to_owned(),
+            Self::PublicationSuspended => "sites.publication_suspended".to_owned(),
             Self::PublicationInvalid => "sites.publication_invalid".to_owned(),
             Self::IndexUnavailable => "sites.notes_index_unavailable".to_owned(),
             Self::Note(error) => format!("sites.{}", error.class()),
@@ -244,6 +248,20 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
             .collect();
         if rows.is_empty() {
             return Err(BuildFailure::PublicationNotFound);
+        }
+        let read: Vec<&str> = rows.iter().map(|row| row.publication_id.as_str()).collect();
+        let suspended: bool = sqlx::query_scalar(
+            "select exists (select 1 from sites.publications where site_id = $1 \
+             and publication_id = any($2) and state = 'suspended')",
+        )
+        .bind(site_id)
+        .bind(&read)
+        .fetch_one(self.database.pool())
+        .await
+        .map_err(BuildFailure::Database)?;
+        if suspended {
+            // The current release keeps the pages of the suspended publication.
+            return Err(BuildFailure::PublicationSuspended);
         }
         let mut indexes: BTreeMap<Uuid, Vec<IndexedFile>> = BTreeMap::new();
         for row in &rows {

@@ -10,6 +10,10 @@ use crate::sites_blobs::SitesBlobs;
 
 /// What the domain handlers share.
 #[derive(Debug)]
+#[expect(
+    dead_code,
+    reason = "the routes of SITE-025 tasks 5.27 and 5.33 read the state"
+)]
 pub struct ApiState {
     database: Database,
     blobs: SitesBlobs,
@@ -21,6 +25,10 @@ impl ApiState {
     /// # Errors
     ///
     /// A query error when the state cannot be read.
+    #[expect(
+        clippy::unused_async,
+        reason = "SITE-025 task 5.27 reads the servable sites here"
+    )]
     pub async fn load(database: Database, blobs: SitesBlobs) -> Result<Arc<Self>, sqlx::Error> {
         Ok(Arc::new(Self { database, blobs }))
     }

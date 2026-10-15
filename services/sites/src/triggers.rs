@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use ratatoskr_event_envelope::{CommandEnvelope, EventEnvelope};
-use ratatoskr_notes_contracts::{FileChanged, VaultPath};
+use ratatoskr_notes_contracts::{FileChanged, VaultDisconnected, VaultPath};
 use ratatoskr_sites_contracts::{PublicationId, ReleaseBuildRequested, SiteId};
 use ratatoskr_sites_persistence::Database;
 use ratatoskr_sites_publications::{Publication, PublicationMode, select};
@@ -225,6 +225,38 @@ impl<I: NotesIndex + 'static> Triggers<I> {
     }
 }
 
+impl<I: NotesIndex + 'static> Triggers<I> {
+    /// A vault disconnection: every publication over the connection becomes `suspended`. The
+    /// current release of each site stays current (workspace spec `site-publications`).
+    async fn disconnection(&self, payload: &[u8]) -> Result<Disposition, ApplyError> {
+        let Ok(envelope) = EventEnvelope::from_json(payload) else {
+            return Ok(Disposition::Reject);
+        };
+        let Ok(disconnected) = envelope.payload_as::<VaultDisconnected>() else {
+            return Ok(Disposition::Reject);
+        };
+        let mut transaction = self.database.pool().begin().await?;
+        let fresh = sqlx::query(
+            "insert into sites.inbox (message_id, subject, consumed_at) values ($1, $2, now()) \
+             on conflict (message_id) do nothing",
+        )
+        .bind(envelope.event_id.0)
+        .bind("evt.notes.vault.disconnected.v1")
+        .execute(&mut *transaction)
+        .await?;
+        if fresh.rows_affected() > 0 {
+            sqlx::query(
+                "update sites.publications set state = 'suspended' where connection_id = $1",
+            )
+            .bind(disconnected.connection_id.0)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(Disposition::Done)
+    }
+}
+
 /// The command id, the owner and the payload of a build command.
 fn parse_command(payload: &[u8]) -> Option<(Uuid, Uuid, ReleaseBuildRequested)> {
     let command = CommandEnvelope::from_json(payload).ok()?;
@@ -238,7 +270,8 @@ impl<I: NotesIndex + 'static> Inbound for Triggers<I> {
         let applied = match durable {
             Durable::ReleaseBuilds => self.command(payload).await,
             Durable::NoteChanges => self.note_change(payload).await,
-            Durable::VaultDisconnections | Durable::Approvals => Ok(Disposition::Done),
+            Durable::VaultDisconnections => self.disconnection(payload).await,
+            Durable::Approvals => Ok(Disposition::Done),
         };
         applied.unwrap_or_else(|error| {
             tracing::warn!(%error, ?durable, "a message could not be applied; it comes again");

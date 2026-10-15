@@ -193,7 +193,8 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     Ok(())
 }
 
-/// The consumers of the build commands and the note changes, and the build worker. The notes
+/// The consumers of the build commands, the note changes and the vault disconnections, and the
+/// build worker. The notes
 /// index is [`UnavailableIndex`] until the notes internal index route exists.
 fn start_pipeline(
     config: &SitesConfig,
@@ -217,7 +218,11 @@ fn start_pipeline(
         builder,
         &target,
         &Durables::production(),
-        &[Durable::ReleaseBuilds, Durable::NoteChanges],
+        &[
+            Durable::ReleaseBuilds,
+            Durable::NoteChanges,
+            Durable::VaultDisconnections,
+        ],
         stop,
     )
 }
