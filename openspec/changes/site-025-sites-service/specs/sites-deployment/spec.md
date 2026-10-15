@@ -37,6 +37,11 @@ ratatoskr-notes-blobs` and SHALL NOT create a group or a user with the name
 - **WHEN** the test reads `deploy/sysusers.d/ratatoskr-sites.conf`
 - **THEN** it holds the membership line and no `g` or `u` line for `ratatoskr-notes-blobs`, verified by `services/sites/tests/deploy_files.rs::sysusers_adds_sites_to_the_notes_blob_group`
 
+#### Scenario: The unit names the read group
+
+- **WHEN** the test reads `deploy/systemd/ratatoskr-sites.service`
+- **THEN** its `SupplementaryGroups=` names `ratatoskr-notes-blobs` and `ratatoskr`, verified by `services/sites/tests/deploy_files.rs::unit_names_the_notes_blob_group`
+
 ### Requirement: A note blob is verified before it is used
 
 The reader of the notes blob root SHALL verify the owner, the digest algorithm, the digest, the
@@ -54,3 +59,13 @@ SHALL read nothing. Bytes that do not hash to the digest of the reference SHALL 
 
 - **WHEN** the reader gets a `BlobRef` whose owner is not `ratatoskr-notes`
 - **THEN** the read fails with the class `blob_owner` and reads nothing under the root, verified by `services/sites/tests/notes_blob_read.rs::foreign_owner_ref_is_refused`
+
+#### Scenario: No file is at the path of the digest
+
+- **WHEN** the reader gets a reference whose file does not exist under the root
+- **THEN** the read fails with the class `blob_missing`, verified by `services/sites/tests/notes_blob_read.rs::missing_blob_is_blob_missing`
+
+#### Scenario: The file has another length
+
+- **WHEN** the file at the path of a reference is longer or shorter than `length_bytes`
+- **THEN** the read fails with the class `blob_length`, verified by `services/sites/tests/notes_blob_read.rs::blob_of_another_length_is_blob_length`

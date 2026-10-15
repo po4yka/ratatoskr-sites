@@ -17,3 +17,12 @@
 
 - [x] 4.1 RED: add `services/sites/tests/notes_blob_read.rs` with `notes_blob_ref_is_verified_before_use` and `foreign_owner_ref_is_refused`, and a stub reader that returns the bytes unchecked. Run them and confirm that the class assertion of the first fails because the reader returns the bytes unchecked.
 - [x] 4.2 GREEN: read note bytes read-only from the notes root and verify the owner, the algorithm, the digest, the length and a fresh hash, as `blob-references` requires. Verify 4.1.
+
+## 5. The unit names the read group (review of workspace task 5.7)
+
+- [ ] 5.1 RED: add `services/sites/tests/deploy_files.rs::unit_names_the_notes_blob_group`, which asserts that `SupplementaryGroups=` of `deploy/systemd/ratatoskr-sites.service` names `ratatoskr-notes-blobs` and `ratatoskr`. Run it and confirm that the group assertion fails because the unit names only `ratatoskr`.
+- [ ] 5.2 GREEN: name `ratatoskr-notes-blobs` in `SupplementaryGroups=`, as the Knowledge unit does. Verify 5.1.
+
+## 6. Pin the other classes of the note blob reader (review of workspace task 5.9)
+
+- [ ] 6.1 Add `services/sites/tests/notes_blob_read.rs::missing_blob_is_blob_missing` and `blob_of_another_length_is_blob_length`. No failing test first: the code exists, so these are pin tests; each is proven by a mutation of the reader that makes it fail. `blob_algorithm` gets no test: `DigestAlgorithm` has only `Sha256`, so no `BlobRef` can name another algorithm.

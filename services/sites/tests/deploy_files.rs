@@ -15,6 +15,11 @@ const SYSUSERS: &str = concat!(
     "/../../deploy/sysusers.d/ratatoskr-sites.conf"
 );
 
+const UNIT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../deploy/systemd/ratatoskr-sites.service"
+);
+
 /// The read group of the notes blob root. `ratatoskr-notes` owns it; OBS-023 creates it.
 const NOTES_BLOB_GROUP: &str = "ratatoskr-notes-blobs";
 
@@ -103,6 +108,26 @@ fn sysusers_adds_sites_to_the_notes_blob_group() -> Result<(), Box<dyn std::erro
             .iter()
             .any(|fields| fields.starts_with(&["u", "ratatoskr-sites"])),
         "the file still creates the user ratatoskr-sites: {entries:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn unit_names_the_notes_blob_group() -> Result<(), Box<dyn std::error::Error>> {
+    let unit = std::fs::read_to_string(UNIT)?;
+    let groups: Vec<&str> = unit
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("SupplementaryGroups="))
+        .flat_map(str::split_whitespace)
+        .collect();
+
+    assert!(
+        groups.contains(&NOTES_BLOB_GROUP),
+        "the unit names {NOTES_BLOB_GROUP} itself and does not rely on initgroups: {groups:?}"
+    );
+    assert!(
+        groups.contains(&"ratatoskr"),
+        "the unit keeps the shared group ratatoskr: {groups:?}"
     );
     Ok(())
 }
