@@ -98,6 +98,9 @@ create table sites.build_requests (
     -- The builds of this request that failed for a transient reason; the worker tries at most
     -- three times before it reports the failure.
     attempts      integer     not null default 0 check (attempts >= 0),
+    -- When the worker took the row into a build that runs; null while it waits. A removal request
+    -- is deduplicated only against rows that wait, so one that arrives during a build is kept.
+    taken_at      timestamptz,
     check ((origin = 'command') = (operation_id is not null))
 );
 

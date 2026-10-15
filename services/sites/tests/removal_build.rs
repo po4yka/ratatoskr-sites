@@ -196,6 +196,10 @@ async fn removal_build_keeps_the_released_text() -> Outcome {
 async fn removal_during_a_build_is_not_lost() -> Outcome {
     let fixture = two_publications().await?;
     fixture.add_note("team/t.md", "# Team\n\nThe page of pub-t.\n")?;
+    // Only pub-t selects the folder team/.
+    sqlx::query("update sites.publications set excluded_folders = '{private,team}' where publication_id = 'pub-r'")
+        .execute(fixture.database.pool())
+        .await?;
     sqlx::query(
         "insert into sites.publications (site_id, publication_id, connection_id, mode, \
          release_mode, included_folders, created_at) \

@@ -68,7 +68,8 @@ impl BuildQueue {
 /// Request a build of `site_id` because a publication left its effective set or changed (workspace
 /// spec `site-manifest`, "a removal stops at once"): the links, backlinks and titles of the removed
 /// pages leave the pages that stay. It is written only for a site with a current release, in each
-/// release mode, and at most one waits at a time. A removal build reads only the publications of
+/// release mode, and at most one waits at a time; a request that a running build took does not
+/// count, so a removal during a build makes one more build. A removal build reads only the publications of
 /// the current release that stay in the effective set. Returns whether a request was written.
 ///
 /// # Errors
@@ -82,7 +83,7 @@ pub(crate) async fn request_removal_build(
         "insert into sites.build_requests (request_id, site_id, origin, operation_id, \
          requested_at) select $1, site_id, 'removal', null, now() from sites.current_releases \
          where site_id = $2 and not exists (select 1 from sites.build_requests \
-         where site_id = $2 and origin = 'removal')",
+         where site_id = $2 and origin = 'removal' and taken_at is null)",
     )
     .bind(Uuid::now_v7())
     .bind(site_id)
@@ -175,8 +176,8 @@ impl<B: SiteBuilds> BuildWorker<B> {
         type Row = (Uuid, String, Option<Uuid>, i32);
         loop {
             let rows: Result<Vec<Row>, sqlx::Error> = sqlx::query_as(
-                "update sites.build_requests set attempts = attempts + 1 where site_id = $1 \
-                 returning request_id, origin, operation_id, attempts",
+                "update sites.build_requests set attempts = attempts + 1, taken_at = now() \
+                 where site_id = $1 returning request_id, origin, operation_id, attempts",
             )
             .bind(site_id)
             .fetch_all(self.database.pool())
@@ -232,6 +233,17 @@ impl<B: SiteBuilds> BuildWorker<B> {
                 return;
             }
             if again {
+                // The rows that are tried again wait like new ones.
+                if let Err(error) = sqlx::query(
+                    "update sites.build_requests set taken_at = null \
+                     where site_id = $1 and taken_at is not null",
+                )
+                .bind(site_id)
+                .execute(self.database.pool())
+                .await
+                {
+                    tracing::warn!(%error, site_id, "the build requests could not be released");
+                }
                 self.retry_later(site_id);
                 return;
             }
