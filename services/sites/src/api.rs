@@ -4,6 +4,7 @@
 //! Every route reads the claims that Edge mints. Edge removes every reserved header that a client
 //! sends, and this listener is reachable only on loopback.
 
+mod delivery;
 mod fault;
 mod manage;
 mod publications;
@@ -29,10 +30,6 @@ const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 #[derive(Debug)]
 pub struct ApiState {
     database: Database,
-    #[expect(
-        dead_code,
-        reason = "the delivery routes of SITE-025 task 5.33 read the blobs"
-    )]
     blobs: SitesBlobs,
     servable: Arc<Servable>,
 }
@@ -63,7 +60,8 @@ impl ApiState {
 }
 
 /// The domain router. A path that no route holds is 404 `sites.route_not_found`. Every route
-/// outside `content/` needs the owner claim ([`require_owner`]).
+/// outside `content/` needs the owner claim ([`require_owner`]); every route under `content/`
+/// answers `GET` and `HEAD` with the anonymous claim.
 pub fn router(state: Arc<ApiState>) -> Router {
     Router::new()
         .route("/v1/sites", get(manage::list_sites))
@@ -84,6 +82,17 @@ pub fn router(state: Arc<ApiState>) -> Router {
             get(manage::internal_manifest),
         )
         .route_layer(middleware::from_fn(require_owner))
+        // The Content Delivery API: Edge's anonymous claim, no owner claim.
+        .route("/v1/sites/{site}/content/release", get(delivery::release))
+        .route(
+            "/v1/sites/{site}/content/pages/{*slug}",
+            get(delivery::page),
+        )
+        .route(
+            "/v1/sites/{site}/content/assets/{sha256}",
+            get(delivery::asset),
+        )
+        .route("/v1/sites/{site}/content/search", get(delivery::search))
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(MAX_MANIFEST_BYTES))

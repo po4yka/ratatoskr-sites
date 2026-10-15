@@ -19,6 +19,10 @@ pub(crate) enum Fault {
     SiteNotFound,
     /// The publication does not exist.
     PublicationNotFound,
+    /// The current release holds no page with this slug.
+    PageNotFound,
+    /// The current release holds no asset with this digest.
+    AssetNotFound,
     /// No route has this path.
     RouteNotFound,
     /// The route has no handler for this method.
@@ -54,6 +58,18 @@ impl Fault {
                 StatusCode::NOT_FOUND,
                 "sites.publication_not_found",
                 "The publication does not exist.",
+                false,
+            ),
+            Self::PageNotFound => (
+                StatusCode::NOT_FOUND,
+                "sites.page_not_found",
+                "The current release has no such page.",
+                false,
+            ),
+            Self::AssetNotFound => (
+                StatusCode::NOT_FOUND,
+                "sites.asset_not_found",
+                "The current release has no such asset.",
                 false,
             ),
             Self::SiteNotFound => (

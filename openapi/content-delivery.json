@@ -1,0 +1,489 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ratatoskr Content Delivery API",
+    "version": "1.0.0",
+    "description": "The anonymous, read-only API through which a site reads the current release of its publications (workspace spec `site-content-delivery`). Edge serves it in the route class `public`: `GET` and `HEAD` only, no credential, a token bucket for each client and a budget for each site (ADR-0017 of `ratatoskr-platform`). Edge refuses every other method with 405 and a request over a bucket with 429 and `Retry-After`; this service answers the rest. A withdrawal stops all public content within 3600 seconds, also in a shared cache.",
+    "license": {
+      "name": "BSD-3-Clause",
+      "identifier": "BSD-3-Clause"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The origin of the site: the sites gateway forwards `/_r/*` to Edge, or Edge itself."
+    }
+  ],
+  "paths": {
+    "/v1/sites/{site}/content/release": {
+      "parameters": [
+        {
+          "name": "site",
+          "in": "path",
+          "required": true,
+          "description": "The site id: 3 to 40 lower-case ASCII letters, digits and `-`.",
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{3,40}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getRelease",
+        "summary": "The current release of the site",
+        "description": "The current `sites/release.v1` document: its pages by slug, its assets by SHA-256 and its navigation. Capability `pages.read`.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current release.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "https://raw.githubusercontent.com/po4yka/ratatoskr-contracts/2c726027da79e0e899ad482afead0a2000b03e61/schemas/json-schema/sites/release.v1.schema.json"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found`: the site does not exist, has no approval, its approval was withdrawn, or its effective set does not hold the capability of the route. Every kind of absence has this one answer.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/content/pages/{slug}": {
+      "parameters": [
+        {
+          "name": "site",
+          "in": "path",
+          "required": true,
+          "description": "The site id: 3 to 40 lower-case ASCII letters, digits and `-`.",
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{3,40}$"
+          }
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "description": "The slug of the page in the current release. It may hold `/`.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getPage",
+        "summary": "One page of the current release",
+        "description": "One `sites/page.v1` of the current release. A page that only an earlier release held is `sites.page_not_found`. Capability `pages.read`.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "https://raw.githubusercontent.com/po4yka/ratatoskr-contracts/2c726027da79e0e899ad482afead0a2000b03e61/schemas/json-schema/sites/page.v1.schema.json"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found` as for the release route, or `sites.page_not_found`: the current release has no page with this slug.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/content/assets/{sha256}": {
+      "parameters": [
+        {
+          "name": "site",
+          "in": "path",
+          "required": true,
+          "description": "The site id: 3 to 40 lower-case ASCII letters, digits and `-`.",
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{3,40}$"
+          }
+        },
+        {
+          "name": "sha256",
+          "in": "path",
+          "required": true,
+          "description": "The lower-case hex SHA-256 of the asset, as the release names it.",
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAsset",
+        "summary": "One asset of the current release",
+        "description": "The bytes of one asset of the current release, with its media type. Capability `assets.read`.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The asset bytes.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=3600`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "contentMediaType": "application/octet-stream"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found` as for the release route, or `sites.asset_not_found`: the current release has no asset with this digest.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sites/{site}/content/search": {
+      "parameters": [
+        {
+          "name": "site",
+          "in": "path",
+          "required": true,
+          "description": "The site id: 3 to 40 lower-case ASCII letters, digits and `-`.",
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{3,40}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "searchRelease",
+        "summary": "Search the current release",
+        "description": "Full-text search over the pages of the current release only, in descending relevance, ties by slug. Capability `search.publication`.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "The query: 1 to 256 Unicode scalar values.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1 to 50 results.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "The number of results to skip.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "An `ETag` of an earlier answer. A match is answered 304 with no body.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The results.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "`public, max-age=60`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The `If-None-Match` matches: no body.",
+            "headers": {
+              "ETag": {
+                "description": "The release id in quotes for the release, page and search routes; the asset digest in quotes for the asset route.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`sites.request.invalid`: a parameter is outside its bounds. No search runs.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`sites.site_not_found`: the site does not exist, has no approval, its approval was withdrawn, or its effective set does not hold the capability of the route. Every kind of absence has this one answer.",
+            "headers": {
+              "Cache-Control": {
+                "description": "`no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorEnvelope": {
+        "$ref": "https://raw.githubusercontent.com/po4yka/ratatoskr-contracts/2c726027da79e0e899ad482afead0a2000b03e61/schemas/json-schema/core/error-envelope.v1.schema.json"
+      },
+      "SearchResults": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "results",
+          "has_more"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "`true` when more results follow after this page of results."
+          }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "title",
+          "snippet"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The slug of the page."
+          },
+          "title": {
+            "type": "string",
+            "description": "The title of the page."
+          },
+          "snippet": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "The start of the text of the page, at most 300 Unicode scalar values."
+          }
+        }
+      }
+    }
+  }
+}

@@ -67,7 +67,7 @@ async fn the_four_routes_answer_for_an_approved_site() -> Outcome {
         answer
             .headers
             .get(header::CONTENT_TYPE)
-            .map(|value| value.as_bytes()),
+            .map(axum::http::HeaderValue::as_bytes),
         Some(asset.media_type.as_str().as_bytes()),
         "the asset has its media type"
     );
@@ -94,10 +94,8 @@ async fn page_of_earlier_release_is_not_found() -> Outcome {
     let path = format!("/v1/sites/{SITE}/content/pages/other");
     assert_eq!(get(&fixture, &path).await?.status, StatusCode::OK);
 
-    fixture.change(
-        "other.md",
-        "---\npublish: false\n---\nNo longer published.\n",
-    )?;
+    // The note leaves the vault, so the next release has no page for it.
+    fixture.remove("other.md")?;
     fixture.builder().build(&request(None)).await?;
     let answer = get(&fixture, &path).await?;
     assert_eq!(
@@ -138,7 +136,7 @@ async fn every_kind_of_absence_is_the_same_answer() -> Outcome {
         missing
             .headers
             .get(header::CACHE_CONTROL)
-            .map(|value| value.as_bytes()),
+            .map(axum::http::HeaderValue::as_bytes),
         Some(&b"no-store"[..]),
         "an absence is never stored"
     );

@@ -216,6 +216,16 @@ impl Fixture {
         )
     }
 
+    /// Remove the file `path` from the connection, as a deletion in the vault.
+    pub(crate) fn remove(&self, path: &str) -> Result<(), Failure> {
+        self.index
+            .files
+            .lock()
+            .map_err(|_| "the stub index is poisoned")?
+            .retain(|file| file.path != path);
+        Ok(())
+    }
+
     /// Add the note `path` with the text `text` to the connection.
     pub(crate) fn add_note(&self, path: &str, text: &str) -> Result<(), Failure> {
         let revision = revision_of(text.as_bytes(), "text/markdown")?;

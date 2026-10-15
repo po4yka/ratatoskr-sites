@@ -31,7 +31,7 @@
 ## 6. Delivery (workspace tasks 5.32, 5.33)
 
 - [x] 6.1 RED: add `services/sites/tests/delivery.rs` with `the_four_routes_answer_for_an_approved_site`, `page_of_earlier_release_is_not_found`, `every_kind_of_absence_is_the_same_answer`, `unchanged_page_answers_304` and `cache_lifetimes_are_bounded`. Confirm that the status assertion of the first fails with 404 because the routes do not exist.
-- [ ] 6.2 GREEN: implement the four delivery routes on the domain listener, with `ETag` and `Cache-Control` as the workspace spec `site-content-delivery` states, and publish `openapi/content-delivery.json`. Verify 6.1.
+- [x] 6.2 GREEN: implement the four delivery routes on the domain listener, with `ETag` and `Cache-Control` as the workspace spec `site-content-delivery` states, and publish `openapi/content-delivery.json`. Verify 6.1.
 
 ## 7. Search (workspace tasks 5.34, 5.35)
 
