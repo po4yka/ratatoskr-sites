@@ -157,10 +157,49 @@ async fn answer(dir: &Path, file: &BundleFile, reserved: bool, parts: &Parts) ->
     if let Ok(etag) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, etag);
     }
-    if reserved {
-        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    }
+    let cache = if reserved {
+        NO_STORE
+    } else if file.hashed {
+        IMMUTABLE
+    } else {
+        SHORT_LIVED
+    };
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    security_headers(headers);
     response
+}
+
+/// The `Cache-Control` of a file whose name carries a hash of its content.
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
+/// The `Cache-Control` of every other static file, the entry document among them.
+const SHORT_LIVED: &str = "public, max-age=60, must-revalidate";
+
+/// The `Cache-Control` of the reserved SDK pages.
+const NO_STORE: &str = "no-store";
+
+/// The Content Security Policy of every static answer (workspace spec `site-gateway`): scripts,
+/// styles, images, fonts and connections from the site's own origin only, `data:` images, no
+/// plugin, no change of the base and no framing.
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
+     img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; \
+     base-uri 'self'; frame-ancestors 'none'";
+
+/// Set the fixed security headers of a static answer.
+pub(crate) fn security_headers(headers: &mut axum::http::HeaderMap) {
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+    );
 }
 
 /// Whether `If-None-Match` of the request names `etag`.

@@ -69,6 +69,7 @@ impl IntoResponse for Fault {
             (status, Json(ErrorEnvelope::new(code, message, retryable))).into_response();
         let headers = response.headers_mut();
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        crate::serve::security_headers(headers);
         response
     }
 }
