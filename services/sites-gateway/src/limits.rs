@@ -1,11 +1,14 @@
 //! The token bucket of each client key (workspace spec `site-gateway`, design D8).
 //!
 //! The key is `CF-Connecting-IP`, which Cloudflare overwrites at its edge; it selects a bucket and
-//! is used for nothing else. Every request without a valid address shares one bucket. The table
-//! holds at most [`MAX_KEYS`] buckets; when it is full it drops the buckets that refilled, and a new
-//! key that still finds no room shares the bucket of the requests without an address.
+//! is used for nothing else. An IPv4 address is its own key; an IPv6 address is keyed by its /64
+//! prefix, because one client usually holds a whole /64. Every request without a valid address
+//! shares one bucket. The table holds at most [`MAX_KEYS`] buckets; a new key in a full table evicts
+//! the bucket that was used least recently, never the shared one, so many addresses cannot push a
+//! client into the shared bucket.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Mutex;
 
 use axum::http::HeaderMap;
@@ -49,17 +52,16 @@ impl Buckets {
         let Ok(mut buckets) = self.table.lock() else {
             return Ok(());
         };
-        let key = if buckets.contains_key(&key) || buckets.len() < MAX_KEYS {
-            key
-        } else {
-            let (rate, burst) = (self.rate, self.burst);
-            buckets.retain(|_, bucket| refilled(*bucket, now, rate, burst) < burst);
-            if buckets.len() < MAX_KEYS {
-                key
-            } else {
-                SHARED.to_owned()
+        if !buckets.contains_key(&key) && buckets.len() >= MAX_KEYS {
+            let oldest = buckets
+                .iter()
+                .filter(|(held, _)| held.as_str() != SHARED)
+                .min_by_key(|(_, bucket)| bucket.at)
+                .map(|(held, _)| held.clone());
+            if let Some(oldest) = oldest {
+                buckets.remove(&oldest);
             }
-        };
+        }
         let bucket = buckets.entry(key).or_insert(Bucket {
             tokens: self.burst,
             at: now,
@@ -90,11 +92,22 @@ fn seconds(wait: f64) -> u64 {
     std::time::Duration::try_from_secs_f64(wait.ceil()).map_or(1, |wait| wait.as_secs().max(1))
 }
 
-/// The client key of `headers`: the address in `CF-Connecting-IP`, or the shared key.
+/// The client key of `headers`: the IPv4 address or the /64 prefix of the IPv6 address in
+/// `CF-Connecting-IP`, or the shared key.
 fn client_key(headers: &HeaderMap) -> String {
-    headers
+    let address = headers
         .get("cf-connecting-ip")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<std::net::IpAddr>().ok())
-        .map_or_else(|| SHARED.to_owned(), |address| address.to_string())
+        .and_then(|value| value.trim().parse::<IpAddr>().ok());
+    match address {
+        Some(IpAddr::V4(address)) => address.to_string(),
+        Some(IpAddr::V6(address)) => address.to_ipv4_mapped().map_or_else(
+            || {
+                let [a, b, c, d, ..] = address.segments();
+                format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
+            },
+            |mapped| mapped.to_string(),
+        ),
+        None => SHARED.to_owned(),
+    }
 }
