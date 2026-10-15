@@ -25,4 +25,4 @@
 
 ## 6. Pin the other classes of the note blob reader (review of workspace task 5.9)
 
-- [ ] 6.1 Add `services/sites/tests/notes_blob_read.rs::missing_blob_is_blob_missing` and `blob_of_another_length_is_blob_length`. No failing test first: the code exists, so these are pin tests; each is proven by a mutation of the reader that makes it fail. `blob_algorithm` gets no test: `DigestAlgorithm` has only `Sha256`, so no `BlobRef` can name another algorithm.
+- [x] 6.1 Add `services/sites/tests/notes_blob_read.rs::missing_blob_is_blob_missing` and `blob_of_another_length_is_blob_length`. No failing test first: the code exists, so these are pin tests; each is proven by a mutation of the reader that makes it fail. The length check on the metadata alone is not observable by class, because the check after the read gives the same class; only a mutation that removes both checks fails the test. `blob_algorithm` gets no test: `DigestAlgorithm` has only `Sha256`, so no `BlobRef` can name another algorithm.

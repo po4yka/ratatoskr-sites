@@ -79,3 +79,37 @@ async fn foreign_owner_ref_is_refused() -> Result<(), Box<dyn std::error::Error>
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn missing_blob_is_blob_missing() -> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let reader = NotesBlobReader::new(root.path());
+    let note = reference("ratatoskr-notes", NOTE_SHA256, 7)?;
+
+    let read = reader.read(&note).await;
+    assert_eq!(
+        read.as_ref().map_err(NotesBlobError::class).err(),
+        Some("blob_missing"),
+        "no file at the path of the digest is a missing blob: {read:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn blob_of_another_length_is_blob_length() -> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let reader = NotesBlobReader::new(root.path());
+    let note = reference("ratatoskr-notes", NOTE_SHA256, 7)?;
+
+    for bytes in [&b"a note\n and more"[..], &b"a not"[..]] {
+        store(root.path(), NOTE_SHA256, bytes)?;
+        let read = reader.read(&note).await;
+        assert_eq!(
+            read.as_ref().map_err(NotesBlobError::class).err(),
+            Some("blob_length"),
+            "a file of {} bytes for a reference of 7 is refused with blob_length: {read:?}",
+            bytes.len()
+        );
+    }
+    Ok(())
+}
