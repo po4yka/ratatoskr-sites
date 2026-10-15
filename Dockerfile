@@ -1,12 +1,14 @@
-# The deployment artifact: the Sites binary, built for the machine it runs on.
+# The deployment artifact: the Sites binary and the sites gateway binary, built for the machine they
+# run on.
 #
 # `ratatoskr-workspace/docs/DEPLOYMENT_TARGET.md` fixes the target as one Raspberry Pi 5: `aarch64`,
 # Debian 12, glibc 2.36. A binary linked against a newer glibc does not start against an older one,
 # so the builder is Debian 12 (`bookworm`) as well, and the runtime stage is the same release.
 #
 # Three stages, in this order: `builder`, `export` and `runtime`. A plain `docker build` builds the
-# LAST stage, so `runtime` stays last; CI's arm64 smoke test runs the binary in it. `export` holds
-# only the binary that `deploy/systemd/ratatoskr-sites.service` starts, and is what
+# LAST stage, so `runtime` stays last; CI's arm64 smoke test runs the Sites binary in it. `export` holds
+# only the binaries that `deploy/systemd/ratatoskr-sites.service` and
+# `deploy/systemd/ratatoskr-sites-gateway.service` start, and is what
 # `ratatoskr-workspace`'s reusable-release-artifact workflow publishes for each commit on main:
 #
 #     docker buildx build --platform linux/arm64 --target export --output type=local,dest=out .
@@ -35,8 +37,8 @@ ENV RATATOSKR_GIT_SHA=${RATATOSKR_GIT_SHA}
 
 COPY . .
 
-# `--locked`, as the gate builds. Only the deployed binary: the release-artifact check refuses a
-# binary that no unit starts.
+# `--locked`, as the gate builds. Only the deployed binaries: the release-artifact check refuses a
+# binary that no unit starts, and a unit whose binary is missing.
 #
 # The registry, the git checkouts and `target/` are BuildKit cache mounts, so a rebuild compiles only
 # what changed. A cache mount is not part of the layer, so the binary is copied to `/out` in the same
@@ -44,14 +46,16 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo build --release --locked -p ratatoskr-sites --bin ratatoskr-sites \
+    cargo build --release --locked \
+      -p ratatoskr-sites --bin ratatoskr-sites \
+      -p ratatoskr-sites-gateway --bin ratatoskr-sites-gateway \
  && mkdir /out \
- && cp target/release/ratatoskr-sites /out/
+ && cp target/release/ratatoskr-sites target/release/ratatoskr-sites-gateway /out/
 
 # ---------------------------------------------------------------------------------------------
 # export
 # ---------------------------------------------------------------------------------------------
-# Only the binary: the local exporter writes this stage's whole filesystem, and all of it is published.
+# Only the binaries: the local exporter writes this stage's whole filesystem, and all of it is published.
 FROM scratch AS export
 COPY --from=builder /out/ /
 

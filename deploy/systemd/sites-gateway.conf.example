@@ -1,0 +1,25 @@
+# Operator example for ratatoskr-sites-gateway, a systemd EnvironmentFile
+# (EnvironmentFile=/etc/ratatoskr/sites-gateway.conf). It holds no secret.
+# `ratatoskr-sites-gateway check-config` validates it without starting anything (exit 0 valid, exit 78 invalid).
+
+# The public listener. Only cloudflared reaches it, through the marked ingress block that the
+# playbook of ratatoskr-workspace renders. Loopback only; allocated in docs/DEPLOYMENT_TARGET.md.
+RATATOSKR__PUBLIC__LISTEN_ADDRESS=127.0.0.1:8183
+
+# Operator listener: /health/live, /health/ready, /metrics, /version. Host only.
+RATATOSKR__ADMIN__BIND=127.0.0.1:9473
+
+# The sites tree that ratatoskr-sites writes; read only, through the group ratatoskr-sites-bundles.
+RATATOSKR__SITES__ROOT=/mnt/nvme/ratatoskr/sites
+
+# Edge, which the gateway forwards /_r/v1/sites/<site>/... to. The source address is the only peer
+# whose X-Ratatoskr-Client-IP Edge trusts (RATATOSKR__SITES__GATEWAY_PEER of Edge, the same value).
+RATATOSKR__EDGE__URL=http://127.0.0.1:8080
+RATATOSKR__EDGE__SOURCE_ADDRESS=127.0.0.83
+
+# The token bucket per CF-Connecting-IP, and the largest forwarded body. Starting values.
+RATATOSKR__LIMITS__RATE_PER_SECOND=20
+RATATOSKR__LIMITS__BURST=60
+RATATOSKR__LIMITS__FORWARDED_BODY_BYTES=1048576
+
+RATATOSKR__TELEMETRY__LOG_FORMAT=json

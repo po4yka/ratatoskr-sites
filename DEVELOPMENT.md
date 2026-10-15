@@ -99,6 +99,19 @@ validates the environment and binds nothing (exit 0 valid, exit 78 invalid).
 
 An unknown `RATATOSKR__` key stops the start with exit 78.
 
+## Running the sites gateway
+
+```bash
+export RATATOSKR__SITES__ROOT="$PWD/target/sites-tree"
+cargo run -p ratatoskr-sites-gateway
+```
+
+It reads the sites tree, serves the public listener on `127.0.0.1:8183` and the operator plane on
+`127.0.0.1:9473`, and forwards `/_r/` to Edge at `RATATOSKR__EDGE__URL`. On a developer machine that
+has only `127.0.0.1` on its loopback interface, set `RATATOSKR__EDGE__SOURCE_ADDRESS=127.0.0.1`.
+`deploy/systemd/sites-gateway.conf.example` lists every key. `cargo run -p ratatoskr-sites-gateway --
+check-config` validates the environment and binds nothing.
+
 ## Schema
 
 `schema.sql` at the repository root is the whole schema. The binary embeds it and applies it, under
@@ -125,7 +138,10 @@ canary location there.
 | `deploy/nats/identity.conf` | A copy of the `SITES` stanza of Platform's NATS authorization file. |
 | `deploy/systemd/sites.conf.example` | The environment file of the service on the host. |
 | `deploy/systemd/ratatoskr-sites.service` | The unit of the service. |
-| `Dockerfile` | The `export` stage holds only `ratatoskr-sites` for `linux/arm64` and glibc 2.36. The `release-artifact` job of `ci.yml` publishes it for each commit on `main` through the reusable workflow of `ratatoskr-workspace`. |
+| `Dockerfile` | The `export` stage holds only `ratatoskr-sites` and `ratatoskr-sites-gateway` for `linux/arm64` and glibc 2.36. The `release-artifact` job of `ci.yml` publishes it for each commit on `main` through the reusable workflow of `ratatoskr-workspace`. |
+| `deploy/systemd/sites-gateway.conf.example` | The environment file of the sites gateway on the host. |
+| `deploy/systemd/ratatoskr-sites-gateway.service` | The unit of the sites gateway. |
+| `deploy/sysusers.d/ratatoskr-sites-gateway.conf` | The system user `ratatoskr-sites-gateway`, and its membership in the read group `ratatoskr-sites-bundles` of the sites tree. |
 | `deploy/sysusers.d/ratatoskr-sites.conf` | The system user `ratatoskr-sites`, and its membership in the read group `ratatoskr-notes-blobs` of the notes blob root. The group, the setgid root and the umask of notes come from OBS-023. |
 
 ## Workflow

@@ -152,7 +152,7 @@ jobs:
       # The deployable set, exactly. `export` is the stage `ratatoskr-workspace`'s
       # reusable-release-artifact workflow publishes; its check refuses a binary no unit starts as
       # firmly as a missing one.
-      - name: The export stage holds exactly the Sites service, for aarch64
+      - name: The export stage holds exactly the Sites service and the sites gateway, for aarch64
         run: |
           set -euo pipefail
           docker buildx build \
@@ -160,11 +160,13 @@ jobs:
             --build-arg RATATOSKR_GIT_SHA="$GITHUB_SHA" \
             --output "type=local,dest=$RUNNER_TEMP/export" .
           actual=$(python3 -c 'import os, sys; print(" ".join(sorted(os.listdir(sys.argv[1]))))' "$RUNNER_TEMP/export")
-          if [ "$actual" != "ratatoskr-sites" ]; then
-            echo "::error::the export stage holds '$actual', expected 'ratatoskr-sites'"
+          if [ "$actual" != "ratatoskr-sites ratatoskr-sites-gateway" ]; then
+            echo "::error::the export stage holds '$actual', expected 'ratatoskr-sites ratatoskr-sites-gateway'"
             exit 1
           fi
-          file "$RUNNER_TEMP/export/ratatoskr-sites" | tee /dev/stderr | grep -q 'ARM aarch64'
+          for binary in ratatoskr-sites ratatoskr-sites-gateway; do
+            file "$RUNNER_TEMP/export/$binary" | tee /dev/stderr | grep -q 'ARM aarch64'
+          done
 
       # Start, ready, SIGTERM, exit 0, against the real artifact. Sites applies its own `schema.sql`;
       # without RATATOSKR__BUS__URL it connects to no bus. `--network host` for both, so every

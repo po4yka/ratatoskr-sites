@@ -48,6 +48,9 @@ The design is in `ratatoskr-workspace`: ADR-0011, `docs/NOTES_AND_SITES.md`, and
 | Database | schema `sites`, role `ratatoskr_sites`, database `ratatoskr` | This service only |
 | Note bytes | `/mnt/nvme/ratatoskr/blobs/ratatoskr-notes`, read-only, through the group `ratatoskr-notes-blobs` | This service reads; only `ratatoskr-notes` writes |
 | Release pages and assets | `/mnt/nvme/ratatoskr/blobs/ratatoskr-sites` | This service only |
+| Sites tree: deploys and the gateway projection | `/mnt/nvme/ratatoskr/sites` | This service writes; the sites gateway reads through the group `ratatoskr-sites-bundles` |
+| Sites gateway, public | `127.0.0.1:8183` (`RATATOSKR__PUBLIC__LISTEN_ADDRESS`) | `cloudflared` only |
+| Sites gateway, operator plane | `127.0.0.1:9473` (`RATATOSKR__ADMIN__BIND`) | The host only |
 
 The domain API:
 
@@ -65,6 +68,8 @@ The domain API:
 Every route outside `content/` refuses Edge's anonymous claim. The owner guide is
 [docs/OWNER_GUIDE.md](docs/OWNER_GUIDE.md).
 
+| `POST /v1/sites/{site}/deploys`, `POST .../deploys/{commit}/activate` | deploy | Store a bundle archive; make a stored deploy current |
+
 The bus subjects, under the `SITES` identity of `deploy/nats/identity.conf`:
 
 | Subject | Direction | Durable or meaning |
@@ -76,6 +81,27 @@ The bus subjects, under the `SITES` identity of `deploy/nats/identity.conf`:
 | `evt.sites.release.published.v1` | published | A release of a site became current |
 | `evt.sites.draft.changed.v1` | published | A note that a publication of a site selects changed in the vault; Edge sends it to the owner sessions as `draft.changed` |
 | `evt.platform.operation.reported.v1` | published | The report of a `sites.release.build` operation |
+
+## The sites gateway
+
+`ratatoskr-sites-gateway` (`services/sites-gateway`, SITE-026) is the second binary of this
+repository. It serves each approved site on its own hostname from the static bundle that the site's
+CI built, and forwards the site's own API calls to Edge:
+
+- The `Host` of a request selects the one approved site that names it in its `site.json`; any
+  other host is 404 `sites.gateway.unknown_host`. The gateway reads the projections again every two
+  seconds.
+- A static path serves the file of the current deploy that the manifest lists, with the `ETag` of
+  the manifest, `immutable` for a hashed file and 60 seconds for the others, and the fixed security
+  headers. A hashed file of the previous deploy stays reachable after a switch. `/.ratatoskr/` holds
+  the SDK pages: `no-store` and no entry fallback.
+- `/_r/v1/sites/<site>/...` of the site of the host goes to Edge without the prefix, without any
+  inbound `x-ratatoskr-*` header, with `X-Ratatoskr-Client-IP` from `CF-Connecting-IP`, from the
+  source address `127.0.0.83`. Event streams pass event by event.
+- A token bucket per `CF-Connecting-IP` (20 per second, burst 60) and a 1 MiB cap on forwarded
+  bodies bound the load.
+
+The deploy files are in `deploy/`; [deploy/README.md](deploy/README.md) explains them.
 
 ## The HTML of a page
 
@@ -112,6 +138,9 @@ What the allowlist does to markup that a note writes:
 - [x] Manifest, effective set, route classes, delivery and search (tasks 5.26 to 5.35).
 - [x] Owner guide (task 5.36).
 - [x] The HTTP client of the notes internal index route (workspace tasks 4.1 to 4.5).
+- [x] The scope query, the draft routes and the draft change event (SITE-027, group 9).
+- [x] The deploy receipt, store and activation, the gateway projection, and the sites gateway with
+  its unit (SITE-026, groups 4 to 7).
 
 ## Development
 
