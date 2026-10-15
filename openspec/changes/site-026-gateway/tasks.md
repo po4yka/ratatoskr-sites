@@ -4,7 +4,7 @@
 - [x] 4.2 GREEN: implement the streaming receipt: path rules before any write, digest check per file while streaming into a staging directory, rename into `bundles/<commit>` only after every file passes. Verify that 4.1 passes.
 - [x] 4.3 RED: add `the_reserved_sdk_path_is_accepted` and `a_path_under_the_forwarding_prefix_is_refused` to `receipt.rs`. The first asserts that a bundle listing `.ratatoskr/sign-in/index.html` is stored with that file; the second asserts `sites.bundle.reserved_path` for `_r/v1/sites/x/content`. Confirm that the second fails because the receipt has no reserved-path rule.
 - [x] 4.4 GREEN: add the `_r/` rule to the path checks. Verify 4.3.
-- [ ] 4.5 RED: add `a_deploy_to_an_unapproved_site_is_refused` to `receipt.rs`. It marks the site withdrawn in the approval projection, uploads a valid bundle, and asserts status 404 with `sites.site_not_found` and an empty bundle directory. Confirm that it fails because the receipt stores the bundle.
+- [x] 4.5 RED: add `a_deploy_to_an_unapproved_site_is_refused` to `receipt.rs`. It marks the site withdrawn in the approval projection, uploads a valid bundle, and asserts status 404 with `sites.site_not_found` and an empty bundle directory. Confirm that it fails because the receipt stores the bundle.
 - [ ] 4.6 GREEN: check the approval projection of SITE-025 before the receipt writes a byte, and before activation. Verify 4.5.
 - [ ] 4.7 RED: add `a_second_deploy_of_the_same_commit_returns_the_first` to `receipt.rs`. It asserts that the second call returns the same deploy id and that the site holds one directory for the commit. Confirm that it fails because the second call stores a second copy.
 - [ ] 4.8 GREEN: make the receipt idempotent on site id and commit. Verify 4.7.

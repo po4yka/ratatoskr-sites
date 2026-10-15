@@ -162,3 +162,18 @@ async fn a_path_under_the_forwarding_prefix_is_refused() -> Outcome {
     assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
     store.cleanup().await
 }
+
+#[tokio::test]
+async fn a_deploy_to_an_unapproved_site_is_refused() -> Outcome {
+    let store = Store::new(5).await?;
+    store.approval(SITE, "withdrawn").await?;
+    let refused = refusal(&store, Bundle::new(&commit('7')).archive()?).await?;
+    assert_eq!(
+        refused
+            .as_ref()
+            .map(|(code, status, _)| (code.as_str(), *status)),
+        Some(("sites.site_not_found", 404))
+    );
+    assert_eq!(store.stored()?, Vec::<String>::new(), "nothing is stored");
+    store.cleanup().await
+}
