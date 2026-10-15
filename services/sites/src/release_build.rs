@@ -356,14 +356,13 @@ impl<I: NotesIndex> ReleaseBuilder<I> {
         };
         for row in rows {
             if row.released {
-                // Exactly the notes that the publication selected in the current release, and the
-                // attachments of the release; nothing is selected again.
+                // Only the notes and the attachments that the publication published in the current
+                // release; its current configuration selects among them.
                 let files = released
                     .iter()
                     .filter(|(connection_id, _, publications)| {
                         *connection_id == row.connection_id
-                            && (publications.is_empty()
-                                || publications.contains(&row.publication_id))
+                            && publications.contains(&row.publication_id)
                     })
                     .map(|(_, file, _)| file.clone())
                     .collect();

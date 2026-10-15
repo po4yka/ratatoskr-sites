@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ratatoskr_sites_publications::{BuildError, IndexedFile, assign_slugs, select};
+use ratatoskr_sites_publications::{
+    BuildError, IndexedFile, Publication, assign_slugs, in_folder, select,
+};
 use ratatoskr_sites_release::{Built, DEFAULT_FRONTMATTER_ALLOWLIST, SiteInput, selected_notes};
 use serde_json::Value;
 use sqlx::PgConnection;
@@ -141,33 +143,48 @@ impl Provenance {
             .iter()
             .map(|asset| asset.digest.hex.as_str())
             .collect();
-        let targets: BTreeSet<(Uuid, String)> = self
-            .sources
-            .iter()
-            .flat_map(|source| {
-                source
-                    .file
-                    .links
-                    .iter()
-                    .chain(&source.file.embeds)
-                    .filter_map(|link| link.target.clone())
-                    .map(|target| (source.connection, target))
-            })
-            .collect();
+        // Each target of a resolved link or embed, with the publications that selected a note
+        // that names it.
+        let mut targets: BTreeMap<(Uuid, String), BTreeSet<String>> = BTreeMap::new();
+        for source in &self.sources {
+            for link in source.file.links.iter().chain(&source.file.embeds) {
+                if let Some(target) = &link.target {
+                    targets
+                        .entry((source.connection, target.clone()))
+                        .or_default()
+                        .extend(source.publications.iter().cloned());
+                }
+            }
+        }
         for ((connection_id, _), input) in publications.iter().zip(&site.publications) {
             for file in input.files {
-                let used = !file.is_markdown()
-                    && assets.contains(file.revision.digest.hex.as_str())
-                    && targets.contains(&(*connection_id, file.path.clone()));
+                if file.is_markdown() || !assets.contains(file.revision.digest.hex.as_str()) {
+                    continue;
+                }
+                let Some(selecting) = targets.get(&(*connection_id, file.path.clone())) else {
+                    continue;
+                };
+                // Only a publication that selected a note that uses the attachment, and that does
+                // not exclude it, publishes it.
+                let allowing: BTreeSet<String> = publications
+                    .iter()
+                    .zip(&site.publications)
+                    .filter(|((connection, id), other)| {
+                        connection == connection_id
+                            && selecting.contains(id)
+                            && allows(&other.publication, &file.path)
+                    })
+                    .map(|((_, id), _)| id.clone())
+                    .collect();
                 let known = self.sources.iter().any(|source| {
                     source.connection == *connection_id && source.file.path == file.path
                 });
-                if used && !known {
+                if !allowing.is_empty() && !known {
                     self.sources.push(Source {
                         connection: *connection_id,
                         file: file.clone(),
                         keys: BTreeSet::new(),
-                        publications: BTreeSet::new(),
+                        publications: allowing,
                         names_site: false,
                         selection_tags: BTreeSet::new(),
                     });
@@ -238,15 +255,26 @@ impl Provenance {
         self.pages.get(slug).map_or(&[], Vec::as_slice)
     }
 
-    /// The publications of each asset of `built`: those of the pages that use it.
+    /// The publications of each asset of `built`: those of its attachments, each a publication that
+    /// selected a note that uses it and that does not exclude it.
     pub(crate) fn assets(&self, built: &Built) -> BTreeMap<String, Vec<String>> {
+        let used: BTreeSet<&str> = built
+            .pages
+            .iter()
+            .flat_map(|page| page.page.assets.iter().map(|asset| asset.sha256.as_str()))
+            .collect();
         let mut assets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for page in &built.pages {
-            for asset in &page.page.assets {
+        for source in self
+            .sources
+            .iter()
+            .filter(|source| !source.file.is_markdown())
+        {
+            let digest = source.file.revision.digest.hex.as_str();
+            if used.contains(digest) {
                 assets
-                    .entry(asset.sha256.as_str().to_owned())
+                    .entry(digest.to_owned())
                     .or_default()
-                    .extend(self.page(page.page.slug.as_str()).iter().cloned());
+                    .extend(source.publications.iter().cloned());
             }
         }
         assets
@@ -279,4 +307,14 @@ fn matched_tags(file: &IndexedFile, included: &[String]) -> Vec<String> {
         })
         .map(str::to_lowercase)
         .collect()
+}
+
+/// Whether `publication` may publish the attachment `path`: not under `.obsidian/` and not in an
+/// excluded folder, as the release builder decides.
+fn allows(publication: &Publication, path: &str) -> bool {
+    !in_folder(path, ".obsidian")
+        && !publication
+            .excluded_folders
+            .iter()
+            .any(|folder| in_folder(path, folder))
 }
