@@ -1,6 +1,7 @@
-//! SITE-026 tasks 4.9 to 4.12: the activation of a stored deploy and the retention of old deploys
-//! (workspace spec `site-bundles`).
+//! Filesystem link atomicity and retention. Public activation also requires verified provenance.
+//! These tests exercise the same filesystem implementation without treating raw archives as proof.
 
+#[path = "../support/mod.rs"]
 mod support;
 
 use std::os::unix::fs::MetadataExt as _;
@@ -8,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use ratatoskr_sites_contracts::CommitSha;
 use support::{Bundle, Failure, Store, commit};
 
 type Outcome = Result<(), Failure>;
@@ -30,19 +30,16 @@ async fn activate(
     store: &Store,
     commit: &str,
 ) -> Result<Result<(String, Option<String>), String>, Failure> {
-    Ok(store
-        .deploys
-        .activate(&Store::site()?, &CommitSha::parse(commit)?)
-        .await
-        .map(|activated| {
-            (
-                activated.current_commit.as_str().to_owned(),
-                activated
-                    .previous_commit
-                    .map(|commit| commit.as_str().to_owned()),
-            )
-        })
-        .map_err(|error| error.code().to_owned()))
+    let _serial = store.deploys.activations.lock().await;
+    let directory = store.deploys.site_dir(&Store::site()?);
+    let wanted = commit.to_owned();
+    let retention = store.deploys.limits.retention;
+    Ok(tokio::task::spawn_blocking(move || {
+        crate::activation::activate(&directory, &wanted, retention)
+    })
+    .await?
+    .map(|previous| (commit.to_owned(), previous))
+    .map_err(|error| error.code().to_owned()))
 }
 
 /// The commit that the link `name` of the site points to.

@@ -38,7 +38,6 @@ pub struct ApiState {
     servable: Arc<Servable>,
     notes: NotesAccess,
     deploys: DeployStore,
-    deploys_limit: u64,
 }
 
 impl ApiState {
@@ -59,14 +58,13 @@ impl ApiState {
         notes: NotesAccess,
         deploys: (DeployStore, u64),
     ) -> Result<Arc<Self>, sqlx::Error> {
-        let (deploys, deploys_limit) = deploys;
+        let (deploys, _max_bundle_bytes) = deploys;
         Ok(Arc::new(Self {
             database: shared.database.clone(),
             blobs,
             servable: Arc::clone(&shared.servable),
             notes,
             deploys,
-            deploys_limit,
         }))
     }
 

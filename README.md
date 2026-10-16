@@ -68,7 +68,7 @@ The domain API:
 Every route outside `content/` refuses Edge's anonymous claim. The owner guide is
 [docs/OWNER_GUIDE.md](docs/OWNER_GUIDE.md).
 
-| `POST /v1/sites/{site}/deploys`, `POST .../deploys/{commit}/activate` | deploy | Store a bundle archive; make a stored deploy current |
+| `POST /v1/sites/{site}/deploys`, `POST .../deploys/{commit}/activate` | deploy | Verify an immutable public GHCR bundle; activate a verified stored deploy |
 
 The bus subjects, under the `SITES` identity of `deploy/nats/identity.conf`:
 
@@ -150,3 +150,36 @@ See [DEVELOPMENT.md](DEVELOPMENT.md). The local development database is a conven
 ## Licence
 
 BSD-3-Clause. See [LICENSE](LICENSE).
+
+## Verified site bundles
+
+A site manifest binds one canonical GitHub repository name and its immutable numeric repository
+ID. The owner approves that manifest digest in Platform. A deploy request supplies only `commit`,
+`artifact_sha256` and `attestation_bundle`. Sites derives the public GHCR reference, checks the
+real signature and the fixed reusable workflow, then checks the archive manifest and every file.
+The owner session and a paired deployer device follow the same verification path.
+
+Sites stores `verification.json` beside the bundle manifest, outside `files/`. It records the
+repository identity, source commit, artifact digest, approved manifest digest, policy version and
+digest, signer workflow/revision and server verification time. The gateway does not serve it.
+An existing directory without this record cannot be activated. An identical retry verifies the
+proof again; a different artifact for an existing commit returns a conflict. Activation and
+rollback use the local record and current approval, with no registry or verifier subprocess.
+A repository rebind or policy change requires a newly verified deploy.
+
+One verification and one activation can be admitted at a time. Each operation has a 120-second
+total deadline. Cancellation and shutdown stop child process groups, reap the child, wait for
+filesystem work and remove temporary files. The final approval check and filesystem switch share
+one serialization boundary. A concurrent approval change is checked under database row locks.
+The JSON request and each metadata/output stream are bounded to 1 MiB. Archive bytes stream to
+disk; at most one tar layer is accepted, within the configured file budget plus 16 MiB of archive
+overhead. Missing tools or trust roots make readiness and deploy unavailable; the stored content
+serving path remains independent of registry access.
+
+Stable deploy errors include `sites.bundle.provenance_invalid` (422), `sites.bundle.conflict`
+(409), `sites.verifier.busy` (429), `sites.verifier.timeout` (504),
+`sites.verifier.unavailable` (503) and `sites.bundle.too_large` (413). Raw tar requests return 415.
+The operator `/metrics` exposes `ratatoskr_sites_bundle_verifications_total` and
+`ratatoskr_sites_bundle_activations_total`, with only the fixed `outcome` values `success`,
+`rejected`, `busy`, `unavailable`, `timeout` and `cancelled`. No proof or repository field is a label.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the runtime tools and genuine-proof acceptance lane.

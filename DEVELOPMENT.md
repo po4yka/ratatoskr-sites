@@ -157,3 +157,44 @@ canary location there.
 
 `.agents/skills/` holds the vendored Rust skills and `.claude/skills/` links to them. Do not edit
 them here. AGENTS.md explains where a correction goes.
+
+## Site bundle verifier
+
+The optional `RATATOSKR__DEPLOYS__VERIFIER__` object has four required keys: `GH_PATH`,
+`ORAS_PATH`, `TRUSTED_ROOT_PATH` and `SIGNER_COMMIT`. The environment example gives the deployed
+paths and exact reviewed workflow revision. Tools must report gh 2.102.0 and oras 1.3.0. Their
+paths and the trust-root path must be absolute, regular, root-owned and free of symlinks or writable
+ancestors. The startup check snapshots at most 1 MiB of trust roots and runs both version commands
+in a private directory, with no inherited credentials or tool configuration. The workspace
+`sites_verifier` role supplies the reviewed tools and licenses. It does not require a GitHub token.
+An omitted or invalid verifier keeps readiness at 503 and refuses deployment.
+
+The regular Rust gate runs policy, process, request, approval and receipt regression tests.
+The additional `real-proof-tests` feature enables genuine public GHCR acceptance; it requires the
+following environment variables and does not skip tests when any input is absent:
+
+| Variable | Input |
+|---|---|
+| `RATATOSKR_REAL_PROOF_DIR` | Directory with `proof.json` for SDK fixture source `009afe32df0d5e10aaef79ae3e6bd6ecb3a989c9`. |
+| `RATATOSKR_REAL_SECOND_PROOF_DIR` | Directory with `proof.json` and `summary.json` for SDK fixture source `9661c6b5ecb3f8e174b42f6685b7bf663557941f`. |
+| `RATATOSKR_REAL_GH` | Absolute local gh 2.102.0 path. |
+| `RATATOSKR_REAL_ORAS` | Absolute local oras 1.3.0 path. |
+| `RATATOSKR_REAL_TRUST_ROOT` | Reviewed public trust-root JSONL snapshot. |
+
+Use the workspace `integration/tests/site_bundle_fixture_proof.sh` to fetch the first public proof.
+For the second proof, use the same OCI referrer lookup at the exact second source commit.
+The first proof and manifest are also committed under its `integration/fixtures/site028-real-proof/`.
+Both use the fixed reusable workflow at `89331e6aa0b845c3565c1d9785b0dd5038e2de81`.
+The manual test constructor permits developer-owned tool paths; it still runs the actual crypto,
+policy and bounded IO. Separate disposable Linux runtime checks exercise root ownership, ARM64
+and the 512 MiB unit limit. The test delay wrapper changes timing only; it never replaces a signature.
+
+```bash
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-features --locked
+```
+
+These tests include real store/retry/activation, changed signature and identities, approval
+withdrawal/rebind/epoch changes, bounded admission, caller cancellation, tracked shutdown and
+rollback with unavailable tool paths. They require the same disposable PostgreSQL and NATS as the
+normal gate, plus anonymous internet access to the exact public GHCR artifact digests.

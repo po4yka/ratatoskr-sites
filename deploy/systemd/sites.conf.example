@@ -29,3 +29,11 @@ RATATOSKR__BUS__NKEY_SEED_PATH=/etc/ratatoskr/sites.nkey
 # ratatoskr-sites-bundles. A bundle is at most RATATOSKR__DEPLOYS__MAX_BUNDLE_BYTES (default 64 MiB),
 # and a site keeps RATATOSKR__DEPLOYS__RETENTION deploys (default 5).
 RATATOSKR__DEPLOYS__ROOT=/mnt/nvme/ratatoskr/sites
+
+# SITE-028: server-owned public GHCR verification policy. Install the exact tools and reviewed
+# trust roots through the workspace role before enabling this configuration. Every ancestor must
+# be root-owned, with no group/other write permission or symlink. No GitHub token is used.
+RATATOSKR__DEPLOYS__VERIFIER__GH_PATH=/usr/lib/ratatoskr-sites/verifier/gh
+RATATOSKR__DEPLOYS__VERIFIER__ORAS_PATH=/usr/lib/ratatoskr-sites/verifier/oras
+RATATOSKR__DEPLOYS__VERIFIER__TRUSTED_ROOT_PATH=/usr/lib/ratatoskr-sites/verifier/trusted-root.jsonl
+RATATOSKR__DEPLOYS__VERIFIER__SIGNER_COMMIT=89331e6aa0b845c3565c1d9785b0dd5038e2de81

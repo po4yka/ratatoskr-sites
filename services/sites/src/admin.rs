@@ -16,7 +16,9 @@ use ratatoskr_sites_persistence::Database;
 pub struct RuntimeState {
     database: Database,
     started: AtomicBool,
+    verifier_ready: AtomicBool,
     stopping: AtomicBool,
+    deploys: Option<ratatoskr_sites_deploys::DeployStore>,
 }
 
 impl RuntimeState {
@@ -26,13 +28,27 @@ impl RuntimeState {
         Self {
             database,
             started: AtomicBool::new(false),
+            verifier_ready: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
+            deploys: None,
         }
+    }
+
+    /// Share the deploy operation counters with the operator listener.
+    #[must_use]
+    pub fn with_deploy_metrics(mut self, deploys: ratatoskr_sites_deploys::DeployStore) -> Self {
+        self.deploys = Some(deploys);
+        self
     }
 
     /// Both listeners are bound; readiness may answer 200.
     pub fn mark_started(&self) {
         self.started.store(true, Ordering::SeqCst);
+    }
+
+    /// The root-owned verifier passed startup checks.
+    pub fn mark_verifier_ready(&self) {
+        self.verifier_ready.store(true, Ordering::SeqCst);
     }
 
     /// A stop signal arrived; readiness answers 503 from now on.
@@ -64,7 +80,10 @@ async fn live() -> StatusCode {
 /// 200 only after startup completed, before the stop signal, and while the database answers.
 async fn ready(State(state): State<AdminState>) -> StatusCode {
     let runtime = &state.runtime;
-    if !runtime.started.load(Ordering::SeqCst) || runtime.stopping.load(Ordering::SeqCst) {
+    if !runtime.started.load(Ordering::SeqCst)
+        || !runtime.verifier_ready.load(Ordering::SeqCst)
+        || runtime.stopping.load(Ordering::SeqCst)
+    {
         return StatusCode::SERVICE_UNAVAILABLE;
     }
     match runtime.database.ping().await {
@@ -74,7 +93,11 @@ async fn ready(State(state): State<AdminState>) -> StatusCode {
 }
 
 async fn render_metrics(State(state): State<AdminState>) -> impl IntoResponse {
-    state.metrics.render()
+    let mut output = state.metrics.render();
+    if let Some(deploys) = &state.runtime.deploys {
+        output.push_str(&deploys.operation_metrics());
+    }
+    output
 }
 
 async fn version() -> &'static str {

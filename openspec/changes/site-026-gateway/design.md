@@ -33,16 +33,18 @@ archive lacks is `sites.bundle.digest_mismatch` with its path.
 
 ### 4. Modes in the tree
 
-The gateway reads the tree as a member of the group `ratatoskr-sites-bundles`, which the host role
-gives the setgid root (`2750`). A directory made in a setgid directory gets its group and the setgid
-bit, so the service needs no `chmod`: its unit has `UMask=0027`, which makes a deploy directory
-`2750` and a file `0640`. A `chmod` that sets the setgid bit would not work, because the service
-user is not a member of the group and the kernel clears the bit.
+The gateway reads the tree as a member of `ratatoskr-sites-bundles`. The host role gives the root
+that group and mode `2750`. Receipt directories inherit the group but stay private (`0700`) until
+publication. The immutable published directory is `0750`; the service unit's `UMask=0027` leaves
+files `0640`. Publication does not set SGID, because `RestrictSUIDSGID=yes` forbids it. No later
+write inside the immutable directory needs SGID.
 
 ### 5. Activation needs no download
 
-Activation reads nothing but the site directory, and the store has no HTTP client. The rollback test
-asserts the links and that the stored deploy is the same directory as before.
+Under SITE-028, activation reads the local server-written provenance record and the current
+approval projection, then switches the filesystem links under the same serialization boundary as
+publication. It checks the approved repository and current policy. It makes no registry request
+and starts no verifier tool. The real-proof rollback test removes both tool paths before rollback.
 
 ### 6. Retention
 
@@ -57,17 +59,20 @@ are never activated are bounded only by the bundle size limit and the owner's de
 
 Edge forwards the deploy routes for the owner's primary session and for a `site_deployer` device of
 the site. The routes refuse, with `sites.request.forbidden`, a request whose claims name a device
-that is not a `site_deployer` of the site of the route. The archive streams into the receipt with a
-limit of the bundle limit and 16 MiB of tar headers; a declared length above it is refused before
-the body is read.
+that is not a `site_deployer` of the site of the route. SITE-028 replaces raw upload with JSON containing only commit, artifact SHA-256 and an untrusted
+attestation bundle, bounded to 1 MiB. Sites verifies the proof against the approved repository and
+pinned workflow, then streams the single tar layer from public GHCR. The archive bound is the
+configured file budget plus 16 MiB of tar overhead. The receipt still checks every file and path.
 
-### 8. No repository binds a bundle to a site
+### 8. SITE-028 binds the bundle to an approved repository
 
-The bundle manifest names the repository that built it, but the site record does not: the site
-manifest `sites/site-manifest.v1`, the approval event, Platform's `identity.site_approvals` and
-`sites.sites` hold no repository. So the receipt cannot refuse a bundle of another repository whose
-manifest names the site, and this change does not invent a repository field. The gap is reported to
-the workspace.
+The earlier repository-binding gap is addressed by the workspace change
+`bind-site-bundles-to-github`. The site manifest, approval and approval projection carry the
+canonical GitHub repository and immutable numeric ID. The server verifies the actual signed OCI
+artifact, source commit and reviewed reusable workflow before storage. A primary owner session
+cannot bypass this check. `verification.json`, outside public files, binds the stored artifact to
+that approval and policy. Final feature publication and coherent workspace pins remain tracked
+by SITE-028; the older completed task history below is not evidence of the new verification.
 
 ### 9. `site.json` holds the site, the approval state and the hostnames
 

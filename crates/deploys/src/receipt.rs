@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write as _};
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use ratatoskr_sites_contracts::{BundleManifest, BundlePath, SiteId};
@@ -55,8 +56,15 @@ impl Staging {
         let path = site_dir
             .join(STAGING)
             .join(Uuid::now_v7().simple().to_string());
-        std::fs::create_dir_all(path.join(FILES)).map_err(DeployError::Storage)?;
-        Ok(Self { path, kept: false })
+        // Keep the site traversable by the gateway, but hide the receipt until publication.
+        std::fs::create_dir_all(site_dir.join(STAGING)).map_err(DeployError::Storage)?;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&path)
+            .map_err(DeployError::Storage)?;
+        let staging = Self { path, kept: false };
+        std::fs::create_dir(staging.path.join(FILES)).map_err(DeployError::Storage)?;
+        Ok(staging)
     }
 }
 
@@ -75,7 +83,7 @@ pub(crate) fn remove_stale(root: &Path) -> Result<usize, DeployError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
         Err(error) => return Err(DeployError::Storage(error)),
     };
-    let mut removed = 0;
+    let mut removed = remove_verification(root)?;
     for site in sites {
         let staging = site.map_err(DeployError::Storage)?.path().join(STAGING);
         let Ok(receipts) = std::fs::read_dir(&staging) else {
@@ -90,6 +98,22 @@ pub(crate) fn remove_stale(root: &Path) -> Result<usize, DeployError> {
     Ok(removed)
 }
 
+/// Remove private verifier jobs left by an interrupted process before new work starts.
+fn remove_verification(root: &Path) -> Result<usize, DeployError> {
+    let entries = match std::fs::read_dir(root.join(".verification")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(DeployError::Storage(error)),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        std::fs::remove_dir_all(entry.map_err(DeployError::Storage)?.path())
+            .map_err(DeployError::Storage)?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
 /// Receive the archive `reader` for `site` into `site_dir`, at most `max_bytes` of files.
 pub(crate) fn receive(
     site_dir: &Path,
@@ -97,10 +121,42 @@ pub(crate) fn receive(
     max_bytes: u64,
     reader: impl Read,
 ) -> Result<Stored, DeployError> {
-    let mut staging = Staging::new(site_dir)?;
+    publish(site_dir, prepare(site_dir, site, max_bytes, reader)?)
+}
+
+/// A checked archive whose files are still private and removed on drop.
+pub(crate) struct Prepared {
+    staging: Staging,
+    pub(crate) manifest: BundleManifest,
+}
+
+impl Prepared {
+    /// Write server-produced metadata beside the archive manifest, outside public files.
+    pub(crate) fn seal(&self, bytes: &[u8]) -> Result<(), DeployError> {
+        write_new(&self.staging.path.join("verification.json"), bytes)
+    }
+}
+
+/// Check bytes without publishing a deploy directory.
+pub(crate) fn prepare(
+    site_dir: &Path,
+    site: &SiteId,
+    max_bytes: u64,
+    reader: impl Read,
+) -> Result<Prepared, DeployError> {
+    let staging = Staging::new(site_dir)?;
     let (manifest_bytes, received) = unpack(&staging.path, max_bytes, reader)?;
     let manifest = verified(site, &manifest_bytes, &received)?;
     write_new(&staging.path.join(MANIFEST), &manifest_bytes)?;
+    Ok(Prepared { staging, manifest })
+}
+
+/// Publish a prepared receipt. The caller serializes its final authority check and this rename.
+pub(crate) fn publish(site_dir: &Path, prepared: Prepared) -> Result<Stored, DeployError> {
+    let Prepared {
+        mut staging,
+        manifest,
+    } = prepared;
     let bundles = site_dir.join(BUNDLES);
     std::fs::create_dir_all(&bundles).map_err(DeployError::Storage)?;
     let target = bundles.join(manifest.commit.as_str());
@@ -109,6 +165,10 @@ pub(crate) fn receive(
     if target.exists() {
         return stored(&target);
     }
+    // Keep the inherited bundle group. No future write needs SGID in this immutable directory;
+    // chmod with SGID would be refused by the service unit's RestrictSUIDSGID=yes.
+    std::fs::set_permissions(&staging.path, std::fs::Permissions::from_mode(0o750))
+        .map_err(DeployError::Storage)?;
     if let Err(error) = std::fs::rename(&staging.path, &target) {
         // Another receipt of the same commit renamed its copy first.
         return if target.exists() {
@@ -331,4 +391,60 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
             let _ = write!(text, "{byte:02x}");
             text
         })
+}
+
+#[cfg(test)]
+mod private_staging_tests {
+    use super::Staging;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    #[test]
+    fn an_unpublished_receipt_is_private() -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let staging = Staging::new(root.path())?;
+        assert_eq!(
+            std::fs::metadata(&staging.path)?.permissions().mode() & 0o777,
+            0o700
+        );
+        Ok(())
+    }
+    #[test]
+    fn publication_needs_no_suid_or_sgid_permission() -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let site = ratatoskr_sites_contracts::SiteId::parse("site-test")?;
+        let contents = b"verified page";
+        let commit = "a".repeat(40);
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "site_id": site, "repository": "owner/site", "commit": commit,
+            "entry_document": "index.html", "entry_fallback": true,
+            "files": [{"path": "index.html", "size_bytes": contents.len(),
+                "sha256": super::hex(&<sha2::Sha256 as sha2::Digest>::digest(contents)), "hashed": false}],
+        }))?;
+        let mut archive = tar::Builder::new(Vec::new());
+        for (name, bytes) in [
+            (super::MANIFEST, manifest.as_slice()),
+            ("index.html", contents.as_slice()),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(u64::try_from(bytes.len())?);
+            header.set_mode(0o644);
+            archive.append_data(&mut header, name, bytes)?;
+        }
+        let prepared = super::prepare(
+            root.path(),
+            &site,
+            1024,
+            std::io::Cursor::new(archive.into_inner()?),
+        )?;
+        super::publish(root.path(), prepared)?;
+        let mode = std::fs::metadata(root.path().join(super::BUNDLES).join(commit))?
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o7777,
+            0o750,
+            "publication must work with RestrictSUIDSGID=yes"
+        );
+        Ok(())
+    }
 }

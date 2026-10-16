@@ -52,7 +52,9 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 
 # ---- async runtime and HTTP ----
-tokio = { version = "1.46", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync", "fs", "io-util"] }
+tokio = { version = "1.46", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync", "fs", "io-util", "process"] }
+# Owner-approved SITE-028 process-group signals through safe Unix wrappers.
+nix = { version = "=0.30.1", default-features = false, features = ["signal"] }
 axum  = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"] }
 
 # The HTTP client of the notes internal index route, on loopback. The versions of

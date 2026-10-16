@@ -1,6 +1,6 @@
 //! The deploy routes that Edge forwards in the route class `deploy` (workspace change
-//! `add-site-gateway-hosting`, design D3): `POST /v1/sites/{site}/deploys` with the bundle archive
-//! as its body, and `POST /v1/sites/{site}/deploys/{commit}/activate`.
+//! `add-site-gateway-hosting`, design D3): `POST /v1/sites/{site}/deploys` with a digest and an untrusted proof
+//! as its JSON body, and `POST /v1/sites/{site}/deploys/{commit}/activate`.
 //!
 //! Edge accepts the owner's primary session or a `site_deployer` device paired for the site. This
 //! service checks the device claim again: a device that is not a `site_deployer` of this site is
@@ -12,8 +12,7 @@ use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
-use futures_util::TryStreamExt as _;
-use ratatoskr_sites_contracts::{CommitSha, DeployActivated, DeployStored, SiteId};
+use ratatoskr_sites_contracts::{CommitSha, DeployActivated, DeployRequest, DeployStored, SiteId};
 use ratatoskr_sites_deploys::DeployError;
 
 use super::ApiState;
@@ -28,9 +27,8 @@ const SITE_ID_HEADER: &str = "x-ratatoskr-site-id";
 /// The device kind that may deploy one site.
 const SITE_DEPLOYER: &str = "site_deployer";
 
-/// The tar headers and the padding of an archive, over the sum of its file sizes: the largest body
-/// is the bundle limit and this much more.
-const ARCHIVE_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
+/// One MiB for the complete JSON request and its untrusted proof.
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
 impl From<DeployError> for Fault {
     fn from(error: DeployError) -> Self {
@@ -60,7 +58,7 @@ fn deployer_of(headers: &HeaderMap, site: &str) -> Result<(), Fault> {
     }
 }
 
-/// `POST /v1/sites/{site}/deploys`: receive and store a bundle archive.
+/// `POST /v1/sites/{site}/deploys`: verify and store an immutable bundle.
 pub(crate) async fn upload(
     State(state): State<Arc<ApiState>>,
     Path(site): Path<String>,
@@ -69,20 +67,30 @@ pub(crate) async fn upload(
 ) -> Result<Json<DeployStored>, Fault> {
     deployer_of(&headers, &site)?;
     let site = SiteId::parse(&site).map_err(|_| Fault::SiteNotFound)?;
-    let limit = state.deploys_limit.saturating_add(ARCHIVE_OVERHEAD_BYTES);
-    let declared = headers
-        .get(header::CONTENT_LENGTH)
+    if !headers
+        .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok());
-    if declared.is_some_and(|length| length > limit) {
-        return Err(DeployError::TooLarge.into());
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+    {
+        return Err(Fault::Deploy {
+            status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            code: "sites.request.unsupported_media_type",
+            message: "the deploy request must use application/json".to_owned(),
+        });
     }
-    let limited = http_body_util::Limited::new(body, usize::try_from(limit).unwrap_or(usize::MAX));
-    let stream = Body::new(limited)
-        .into_data_stream()
-        .map_err(std::io::Error::other);
-    let reader = tokio_util::io::StreamReader::new(stream);
-    Ok(Json(state.deploys.receive(&site, reader).await?))
+    let bytes = axum::body::to_bytes(body, MAX_REQUEST_BYTES)
+        .await
+        .map_err(|_| Fault::from(DeployError::TooLarge))?;
+    let request: DeployRequest = serde_json::from_slice(&bytes).map_err(|_| {
+        Fault::from(DeployError::Invalid(
+            "the deploy request is not valid".to_owned(),
+        ))
+    })?;
+    if request.attestation_bundle.is_empty() {
+        return Err(DeployError::Provenance.into());
+    }
+    Ok(Json(state.deploys.receive_request(&site, request).await?))
 }
 
 /// `POST /v1/sites/{site}/deploys/{commit}/activate`: make a stored deploy current.

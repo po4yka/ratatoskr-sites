@@ -13,16 +13,33 @@
 //! └── previous -> bundles/<c1>  replaced by rename(2)
 //! ```
 
+#[cfg(test)]
+extern crate self as ratatoskr_sites_deploys;
+#[cfg(test)]
+#[path = "../tests/unit/activation.rs"]
+mod activation_tests;
+
 mod activation;
+mod activation_job;
+mod authority;
+mod bundle_verifier;
+mod operation_metrics;
+mod preflight;
 mod projection;
+mod provenance;
 mod receipt;
+mod seal;
+mod verification_job;
+mod verification_process;
+
+pub use crate::bundle_verifier::{BundleVerifier, VerifierConfig};
 
 pub use crate::projection::{SITE_JSON, SiteProjection, write_projection};
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ratatoskr_sites_contracts::{CommitSha, DeployActivated, DeployStored, SiteId};
+use ratatoskr_sites_contracts::{DeployStored, SiteId};
 use ratatoskr_sites_persistence::Database;
 use tokio_util::io::SyncIoBridge;
 
@@ -31,6 +48,21 @@ use tokio_util::io::SyncIoBridge;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DeployError {
+    /// The server cannot verify build provenance.
+    #[error("the build verifier is unavailable")]
+    VerifierUnavailable,
+    /// The proof does not meet the approved build policy.
+    #[error("the build provenance is not valid")]
+    Provenance,
+    /// The current approval or stored artifact differs from this request.
+    #[error("the approval or stored artifact changed")]
+    Conflict,
+    /// The one verification slot is occupied.
+    #[error("another bundle verification is in progress")]
+    Busy,
+    /// The verification stopped at its total deadline.
+    #[error("bundle verification exceeded its deadline")]
+    Timeout,
     /// The site has no approved manifest.
     #[error("the site does not exist")]
     SiteNotFound,
@@ -71,6 +103,11 @@ impl DeployError {
     #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
+            Self::VerifierUnavailable => "sites.verifier.unavailable",
+            Self::Provenance => "sites.bundle.provenance_invalid",
+            Self::Conflict => "sites.bundle.conflict",
+            Self::Busy => "sites.verifier.busy",
+            Self::Timeout => "sites.verifier.timeout",
             Self::SiteNotFound => "sites.site_not_found",
             Self::UnlistedFile(_) => "sites.bundle.unlisted_file",
             Self::DigestMismatch(_) => "sites.bundle.digest_mismatch",
@@ -88,15 +125,19 @@ impl DeployError {
     #[must_use]
     pub const fn status(&self) -> u16 {
         match self {
+            Self::Conflict => 409,
+            Self::Busy => 429,
+            Self::Timeout => 504,
             Self::SiteNotFound | Self::DeployNotFound => 404,
-            Self::UnlistedFile(_)
+            Self::Provenance
+            | Self::UnlistedFile(_)
             | Self::DigestMismatch(_)
             | Self::UnsafePath(_)
             | Self::ReservedPath(_)
             | Self::SiteMismatch => 422,
             Self::TooLarge => 413,
             Self::Invalid(_) => 400,
-            Self::Storage(_) | Self::Database(_) => 503,
+            Self::VerifierUnavailable | Self::Storage(_) | Self::Database(_) => 503,
         }
     }
 }
@@ -117,6 +158,12 @@ pub struct DeployStore {
     root: PathBuf,
     limits: Limits,
     activations: Arc<tokio::sync::Mutex<()>>,
+    verifier: Option<Arc<BundleVerifier>>,
+    slots: Arc<tokio::sync::Semaphore>,
+    activation_slots: Arc<tokio::sync::Semaphore>,
+    stop: tokio_util::sync::CancellationToken,
+    jobs: tokio_util::task::TaskTracker,
+    metrics: Arc<operation_metrics::OperationMetrics>,
 }
 
 impl DeployStore {
@@ -128,7 +175,36 @@ impl DeployStore {
             root,
             limits,
             activations: Arc::new(tokio::sync::Mutex::new(())),
+            verifier: None,
+            slots: Arc::new(tokio::sync::Semaphore::new(1)),
+            activation_slots: Arc::new(tokio::sync::Semaphore::new(1)),
+            stop: tokio_util::sync::CancellationToken::new(),
+            jobs: tokio_util::task::TaskTracker::new(),
+            metrics: Arc::default(),
         }
+    }
+
+    /// Check root-owned runtime tools in a private directory, then enable deployment.
+    ///
+    /// # Errors
+    /// Returns unavailable when a tool, version or trust root fails startup checks.
+    pub async fn load_verifier(&self, config: VerifierConfig) -> Result<Self, DeployError> {
+        let directory = verification_job::PrivateDirectory::create(&self.root)?;
+        let verifier = BundleVerifier::load(config, directory.path()).await?;
+        Ok(self.clone().with_verifier(verifier))
+    }
+
+    /// Enable verified deployment with a checked server-owned policy.
+    #[must_use]
+    pub fn with_verifier(mut self, verifier: BundleVerifier) -> Self {
+        self.verifier = Some(Arc::new(verifier));
+        self
+    }
+
+    /// Prometheus counters for bounded verification and activation operations.
+    #[must_use]
+    pub fn operation_metrics(&self) -> String {
+        self.metrics.render()
     }
 
     /// The directory of `site` in the sites tree.
@@ -175,44 +251,6 @@ impl DeployStore {
         .await
         .map_err(|_| DeployError::Storage(std::io::Error::other("the receipt stopped")))??;
         answer(stored)
-    }
-}
-
-impl DeployStore {
-    /// Make the stored deploy of `commit` the current deploy of `site`, and the deploy that was
-    /// current before it the previous one. It reads and writes nothing but the site directory, so
-    /// a rollback to the previous deploy needs no download. Activations run one at a time.
-    ///
-    /// # Errors
-    ///
-    /// [`DeployError::SiteNotFound`] for a site that is not approved,
-    /// [`DeployError::DeployNotFound`] when the site holds no deploy of `commit`, and
-    /// [`DeployError::Storage`] when a link cannot be written.
-    pub async fn activate(
-        &self,
-        site: &SiteId,
-        commit: &CommitSha,
-    ) -> Result<DeployActivated, DeployError> {
-        self.require_approved(site).await?;
-        let _one_at_a_time = self.activations.lock().await;
-        let site_dir = self.site_dir(site);
-        let wanted = commit.as_str().to_owned();
-        let retention = self.limits.retention;
-        let previous = tokio::task::spawn_blocking(move || {
-            activation::activate(&site_dir, &wanted, retention)
-        })
-        .await
-        .map_err(|_| DeployError::Storage(std::io::Error::other("the activation stopped")))??;
-        let previous_commit = previous
-            .as_deref()
-            .map(CommitSha::parse)
-            .transpose()
-            .map_err(|_| DeployError::Storage(std::io::Error::other("a link names no commit")))?;
-        Ok(DeployActivated {
-            site_id: site.clone(),
-            current_commit: commit.clone(),
-            previous_commit,
-        })
     }
 }
 

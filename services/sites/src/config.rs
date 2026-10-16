@@ -110,6 +110,9 @@ impl Default for ApiConfig {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeploysConfig {
+    /// Root-owned proof tools and the approved workflow revision. Absence keeps deploy unavailable.
+    #[serde(default)]
+    pub verifier: Option<ratatoskr_sites_deploys::VerifierConfig>,
     /// The sites tree: the bundles, the `current` and `previous` links and `site.json` of each
     /// site. The service is its only writer; the sites gateway reads it.
     #[serde(default = "default_deploys_root")]
@@ -125,6 +128,7 @@ pub struct DeploysConfig {
 impl Default for DeploysConfig {
     fn default() -> Self {
         Self {
+            verifier: None,
             root: default_deploys_root(),
             max_bundle_bytes: default_max_bundle_bytes(),
             retention: default_retention(),

@@ -87,6 +87,8 @@ pub(crate) struct ManifestView {
     hostname: String,
     publications: Vec<String>,
     capabilities: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    github_repository: Option<ratatoskr_sites_contracts::GitHubRepositoryBinding>,
 }
 
 impl ManifestView {
@@ -94,6 +96,7 @@ impl ManifestView {
         Self {
             site_id: manifest.site_id.as_str().to_owned(),
             manifest_sha256: digest,
+            github_repository: manifest.github_repository.clone(),
             hostname: manifest.hostname.as_str().to_owned(),
             publications: manifest
                 .publications

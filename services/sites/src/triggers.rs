@@ -413,10 +413,12 @@ impl<I: NotesIndex + 'static> Triggers<I> {
         if fresh.rows_affected() > 0 {
             sqlx::query(
                 "insert into sites.approval_projection (site_id, approved_digest, state, \
-                 capabilities, hostname, changed_at) values ($1, $2, $3, $4, $5, $6::timestamptz) \
+                 capabilities, hostname, changed_at, github_repository) \
+                 values ($1, $2, $3, $4, $5, $6::timestamptz, $7) \
                  on conflict (site_id) do update set approved_digest = excluded.approved_digest, \
                  state = excluded.state, capabilities = excluded.capabilities, \
-                 hostname = excluded.hostname, changed_at = excluded.changed_at \
+                 hostname = excluded.hostname, changed_at = excluded.changed_at, \
+                 github_repository = excluded.github_repository \
                  where sites.approval_projection.changed_at <= excluded.changed_at",
             )
             .bind(change.site_id.as_str())
@@ -425,6 +427,7 @@ impl<I: NotesIndex + 'static> Triggers<I> {
             .bind(&capabilities)
             .bind(change.hostname.as_str())
             .bind(envelope.occurred_at.to_string())
+            .bind(change.github_repository.as_ref().map(sqlx::types::Json))
             .execute(&mut *transaction)
             .await?;
         }

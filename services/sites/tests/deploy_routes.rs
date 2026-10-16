@@ -1,6 +1,6 @@
 //! SITE-026, local tasks 4.13 and 4.14: the deploy routes of the domain API, which Edge forwards in
 //! the route class `deploy` (Platform SITE-026 group 8): `POST /v1/sites/{site}/deploys` with the
-//! bundle archive as its body, and `POST /v1/sites/{site}/deploys/{commit}/activate`.
+//! digest and untrusted proof as its JSON body, and `POST /v1/sites/{site}/deploys/{commit}/activate`.
 
 mod support;
 
@@ -14,30 +14,12 @@ type Outcome = Result<(), Failure>;
 
 const COMMIT: &str = "3f6c2a9e8b1d4c7f0a5e2b9d6c3f8a1e4b7d0c2f";
 
-/// A bundle of the fixture site with one entry document.
+/// A client proof object is untrusted; no verifier is configured in this route fixture.
 fn bundle() -> Result<Vec<u8>, Failure> {
-    let index = b"<!doctype html><title>r</title>";
-    let sha256 = ratatoskr_sites_release::sha256_hex(index);
-    let manifest = serde_json::to_vec(&serde_json::json!({
-        "site_id": SITE,
-        "repository": "owner/docs-site",
-        "commit": COMMIT,
-        "entry_document": "index.html",
-        "entry_fallback": true,
-        "files": [{ "path": "index.html", "size_bytes": index.len(), "sha256": sha256,
-                    "hashed": false }],
-    }))?;
-    let mut builder = tar::Builder::new(Vec::new());
-    for (path, bytes) in [
-        ("ratatoskr-bundle.json", manifest.as_slice()),
-        ("index.html", index),
-    ] {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(u64::try_from(bytes.len())?);
-        header.set_mode(0o644);
-        builder.append_data(&mut header, path, bytes)?;
-    }
-    Ok(builder.into_inner()?)
+    Ok(serde_json::to_vec(&serde_json::json!({
+        "commit": COMMIT, "artifact_sha256": "a".repeat(64),
+        "attestation_bundle": {"untrusted": true},
+    }))?)
 }
 
 /// A deploy request with the claims that Edge mints for the user `user`, and for a `site_deployer`
@@ -51,7 +33,7 @@ fn deploy_request(
     let mut request = Request::builder()
         .method(Method::POST)
         .uri(path)
-        .header("content-type", "application/x-tar")
+        .header("content-type", "application/json")
         .header("x-ratatoskr-user-id", user.to_string())
         .header("x-correlation-id", "018f0000-0000-7000-8000-00000000c0c3");
     request = match deployer_site {
@@ -66,7 +48,7 @@ fn deploy_request(
 }
 
 #[tokio::test]
-async fn deploy_routes_store_and_activate_a_bundle() -> Outcome {
+async fn deploy_routes_require_an_available_verifier() -> Outcome {
     let fixture = Fixture::new().await?;
     let api = fixture.api().await?;
     let deploys = format!("/v1/sites/{SITE}/deploys");
@@ -76,13 +58,8 @@ async fn deploy_routes_store_and_activate_a_bundle() -> Outcome {
         deploy_request(&deploys, fixture.owner, Some(SITE), bundle()?)?,
     )
     .await?;
-    assert_eq!(stored.status, StatusCode::OK, "{:?}", stored.code());
-    let body = stored.json()?;
-    assert_eq!(
-        body.get("commit").and_then(serde_json::Value::as_str),
-        Some(COMMIT)
-    );
-    assert_eq!(body.get("created"), Some(&serde_json::json!(true)));
+    assert_eq!(stored.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(stored.code().as_deref(), Some("sites.verifier.unavailable"));
 
     let activated = call(
         &api,
@@ -94,13 +71,14 @@ async fn deploy_routes_store_and_activate_a_bundle() -> Outcome {
         )?,
     )
     .await?;
-    assert_eq!(activated.status, StatusCode::OK, "{:?}", activated.code());
-    assert_eq!(
-        activated
-            .json()?
-            .get("current_commit")
-            .and_then(serde_json::Value::as_str),
-        Some(COMMIT)
+    assert_eq!(activated.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        !fixture
+            .deploys_root
+            .path()
+            .join(SITE)
+            .join("current")
+            .exists()
     );
     fixture.cleanup().await
 }
@@ -128,7 +106,7 @@ async fn a_deployer_of_another_site_is_refused() -> Outcome {
             &format!("/v1/sites/{SITE}/deploys"),
             fixture.owner,
             Some(SITE),
-            b"not a tar archive".to_vec(),
+            b"not JSON".to_vec(),
         )?,
     )
     .await?;

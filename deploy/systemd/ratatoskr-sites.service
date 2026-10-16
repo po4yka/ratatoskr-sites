@@ -53,8 +53,9 @@ SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
 # 0027, not 0077: the sites tree /mnt/nvme/ratatoskr/sites is 2750 with the group
-# ratatoskr-sites-bundles (SITE-026), so a deploy directory is 2750 and a file 0640, and the sites
-# gateway reads them as a member of that group. Nothing is readable by others.
+# ratatoskr-sites-bundles (SITE-026). New paths inherit that group. The immutable published
+# deploy directory is 0750 and a file is 0640, so the gateway can read them as a group member.
+# Publication never sets SGID, which RestrictSUIDSGID=yes forbids. Others have no access.
 UMask=0027
 # `ratatoskr` is the shared group of every Ratatoskr unit: /etc/ratatoskr is 0750 root:ratatoskr and
 # /mnt/nvme/ratatoskr/logs 0770 root:ratatoskr (ratatoskr-platform deploy/README.md step 1), so

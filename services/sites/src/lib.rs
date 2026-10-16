@@ -165,19 +165,8 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
         NotesBlobReader::new(&config.blobs.notes_root)
             .with_max_bytes(release_build::MAX_NOTE_BYTES),
     );
-    let deploys = DeployStore::new(
-        database.clone(),
-        config.deploys.root.clone(),
-        Limits {
-            max_bundle_bytes: config.deploys.max_bundle_bytes,
-            retention: config.deploys.retention,
-        },
-    );
-    match deploys.remove_stale_staging().await {
-        Ok(0) => {}
-        Ok(removed) => tracing::info!(removed, "stale receipts of the sites tree are removed"),
-        Err(error) => tracing::warn!(%error, "stale receipts of the sites tree cannot be removed"),
-    }
+    let (deploys, verifier_ready) = deploy_store(config, database.clone()).await;
+    let deploy_jobs = deploys.clone();
     let api_state = ApiState::load(
         &shared,
         SitesBlobs::new(&config.blobs.root),
@@ -186,7 +175,11 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     )
     .await
     .map_err(|error| format!("the domain state could not be read: {error}"))?;
-    let runtime = Arc::new(RuntimeState::new(database.clone()));
+    let runtime =
+        Arc::new(RuntimeState::new(database.clone()).with_deploy_metrics(deploy_jobs.clone()));
+    if verifier_ready {
+        runtime.mark_verifier_ready();
+    }
     let admin = bind(config.admin.bind, "operator").await?;
     let api = bind(config.api.listen_address, "domain").await?;
 
@@ -221,6 +214,7 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
 
     shutdown_signal().await;
     runtime.mark_stopping();
+    deploy_jobs.shutdown().await;
     tracing::info!("stop signal received; draining");
     let _ = stop_sender.send(true);
 
@@ -242,6 +236,36 @@ async fn serve(config: &SitesConfig, metrics: PrometheusHandle) -> Result<(), St
     tracing::info!(graceful = drained, "the process stopped");
     database.close().await;
     Ok(())
+}
+
+/// Missing verification policy keeps serving independent of deployment readiness.
+async fn deploy_store(config: &SitesConfig, database: Database) -> (DeployStore, bool) {
+    let store = DeployStore::new(
+        database,
+        config.deploys.root.clone(),
+        Limits {
+            max_bundle_bytes: config.deploys.max_bundle_bytes,
+            retention: config.deploys.retention,
+        },
+    );
+    match store.remove_stale_staging().await {
+        Ok(0) => {}
+        Ok(removed) => tracing::info!(removed, "stale site receipts are removed"),
+        Err(error) => {
+            tracing::warn!(%error, "stale site receipts cannot be removed");
+            return (store, false);
+        }
+    }
+    let Some(policy) = &config.deploys.verifier else {
+        return (store, false);
+    };
+    match store.load_verifier(policy.clone()).await {
+        Ok(verified) => (verified, true),
+        Err(error) => {
+            tracing::warn!(%error, "site verification startup refused");
+            (store, false)
+        }
+    }
 }
 
 /// The consumers of the four durables, and the build worker, which read the notes internal index

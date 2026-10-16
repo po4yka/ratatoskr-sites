@@ -369,3 +369,15 @@ async fn stale_staging_is_removed_at_start() -> Outcome {
     assert_eq!(removed, 1, "one stale receipt is removed");
     store.cleanup().await
 }
+
+/// A process stopped during registry verification, before tar receipt started.
+#[tokio::test]
+async fn stale_verification_is_removed_at_start() -> Outcome {
+    let store = Store::new(5).await?;
+    let private = store.root.path().join(".verification").join("interrupted");
+    std::fs::create_dir_all(&private)?;
+    std::fs::write(private.join("proof.json"), b"untrusted proof")?;
+    assert_eq!(store.deploys.remove_stale_staging().await?, 1);
+    assert!(!private.exists(), "interrupted proof files remain");
+    store.cleanup().await
+}
