@@ -61,9 +61,25 @@ struct Deploy {
 }
 
 impl Deploy {
-    async fn resolve(gateway: &Gateway, site_dir: &Path, name: &str) -> Option<Self> {
+    /// The deploy that the link `name` of the directory of `site` names, only when it resolves to
+    /// a deploy inside that directory's `bundles/` and its manifest names `site`.
+    async fn resolve(gateway: &Gateway, site: &str, name: &str) -> Option<Self> {
+        let site_dir = tokio::fs::canonicalize(gateway.config.sites.root.join(site))
+            .await
+            .ok()?;
         let dir = tokio::fs::canonicalize(site_dir.join(name)).await.ok()?;
+        if dir.parent() != Some(site_dir.join("bundles").as_path()) {
+            tracing::warn!(
+                site,
+                "a deploy link of a site resolves outside its directory"
+            );
+            return None;
+        }
         let manifest = gateway.manifests.of(&dir).await?;
+        if manifest.site_id.as_str() != site {
+            tracing::warn!(site, "the manifest of a deploy names another site");
+            return None;
+        }
         Some(Self { dir, manifest })
     }
 
@@ -93,8 +109,7 @@ pub(crate) async fn static_file(gateway: &Gateway, site: &str, parts: &Parts) ->
     if parts.method != Method::GET && parts.method != Method::HEAD {
         return Fault::MethodNotAllowed.into_response();
     }
-    let site_dir = gateway.config.sites.root.join(site);
-    let Some(current) = Deploy::resolve(gateway, &site_dir, "current").await else {
+    let Some(current) = Deploy::resolve(gateway, site, "current").await else {
         return Fault::NoDeploy.into_response();
     };
     let Ok(path) = percent_encoding::percent_decode_str(parts.uri.path()).decode_utf8() else {
@@ -108,7 +123,7 @@ pub(crate) async fn static_file(gateway: &Gateway, site: &str, parts: &Parts) ->
     if reserved {
         return Fault::PageNotFound.into_response();
     }
-    if let Some(previous) = Deploy::resolve(gateway, &site_dir, "previous").await
+    if let Some(previous) = Deploy::resolve(gateway, site, "previous").await
         && let Some(file) = previous.file(path).filter(|file| file.hashed)
     {
         return answer(&previous.dir, file, false, parts).await;
