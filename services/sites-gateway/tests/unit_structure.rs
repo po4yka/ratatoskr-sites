@@ -43,3 +43,13 @@ fn the_gateway_unit_has_the_supervision_and_hardening_properties() {
         "the bundle path is not in ReadWritePaths"
     );
 }
+
+/// Review L14: the gateway can reach only loopback and cannot change host resources.
+#[test]
+fn the_gateway_unit_limits_network_and_host_authority() {
+    let unit = std::fs::read_to_string(UNIT).unwrap_or_default();
+    assert_eq!(values(&unit, "IPAddressDeny"), ["any"]);
+    assert_eq!(values(&unit, "IPAddressAllow"), ["localhost"]);
+    assert_eq!(values(&unit, "ProtectHostname"), ["yes"]);
+    assert!(values(&unit, "SystemCallFilter").contains(&"~@privileged @resources"));
+}
