@@ -46,6 +46,9 @@ const ALLOWED: &[&str] = &[
 /// event streams (15 seconds).
 const IDLE_READ: Duration = Duration::from_mins(1);
 
+/// The budget from the forwarded request until Edge sends its response head.
+const RESPONSE_HEAD: Duration = Duration::from_secs(30);
+
 /// The header that names the client for Edge's rate limit.
 const CLIENT_IP: &str = "x-ratatoskr-client-ip";
 
@@ -140,15 +143,28 @@ pub(crate) async fn forward(gateway: &Gateway, site: &str, parts: Parts, body: B
     *request.method_mut() = parts.method.clone();
     *request.uri_mut() = uri;
     *request.headers_mut() = forwarded_headers(&parts.headers);
-    let response = match gateway.edge.request(request).await {
-        Ok(response) => response,
-        Err(error) => {
+    let response = match tokio::time::timeout(RESPONSE_HEAD, gateway.edge.request(request)).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
             tracing::warn!(%error, "Edge could not be reached");
+            return Fault::Unavailable.into_response();
+        }
+        Err(_) => {
+            tracing::warn!("Edge sent no response head within its budget");
             return Fault::Unavailable.into_response();
         }
     };
     let (mut head, incoming) = response.into_parts();
     remove_hop_by_hop(&mut head.headers);
+    let reserved: Vec<HeaderName> = head
+        .headers
+        .keys()
+        .filter(|name| name.as_str().starts_with("x-ratatoskr-"))
+        .cloned()
+        .collect();
+    for name in reserved {
+        head.headers.remove(name);
+    }
     let body = Body::from_stream(idle_bounded(Body::new(incoming)));
     Response::from_parts(head, body)
 }
@@ -181,7 +197,10 @@ fn idle_bounded(
 fn forwarded_headers(inbound: &HeaderMap) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in inbound {
-        let reserved = name.as_str().starts_with("x-ratatoskr-");
+        let field = name.as_str();
+        let reserved = field.starts_with("x-ratatoskr-")
+            || matches!(field, "x-forwarded-for" | "forwarded" | "x-real-ip")
+            || (field.starts_with("cf-") && field != CF_CONNECTING_IP);
         if reserved || *name == header::HOST || *name == header::ACCEPT_ENCODING {
             continue;
         }
