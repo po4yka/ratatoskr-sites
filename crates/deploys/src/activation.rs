@@ -58,6 +58,10 @@ fn retain(
     retention: usize,
     last_activation: Option<std::time::SystemTime>,
 ) -> Result<(), DeployError> {
+    let Some(last_activation) = last_activation else {
+        // Before the first activation, every other deploy was uploaded ahead.
+        return Ok(());
+    };
     let linked: Vec<String> = [CURRENT, PREVIOUS]
         .iter()
         .filter_map(|name| linked(site_dir, name))
@@ -73,7 +77,7 @@ fn retain(
             .metadata()
             .and_then(|metadata| metadata.modified())
             .map_err(DeployError::Storage)?;
-        if last_activation.is_some_and(|activated| stored_at > activated) {
+        if stored_at > last_activation {
             continue;
         }
         others.push((stored_at, commit, entry.path()));
