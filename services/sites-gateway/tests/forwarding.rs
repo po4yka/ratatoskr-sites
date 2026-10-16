@@ -272,3 +272,78 @@ async fn dot_segments_and_encoded_separators_are_not_forwarded() -> Outcome {
     assert_eq!(edge.seen().len(), 0, "the stub Edge receives no request");
     Ok(())
 }
+
+/// Review L5: an Edge response head has a finite thirty-second budget.
+#[tokio::test]
+async fn edge_that_sends_no_header_in_time_is_unavailable() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = gateway(&edge)?;
+    let answer = send(
+        &router,
+        forwarded("/_r/v1/sites/site-a/content/pages?slow-header")?,
+    )
+    .await?;
+    assert_eq!(answer.status, 503);
+    assert_eq!(answer.code().as_deref(), Some("sites.service_unavailable"));
+    assert_eq!(edge.seen().len(), 1);
+    Ok(())
+}
+
+/// Review L6: only public response headers reach the site client.
+#[tokio::test]
+async fn ratatoskr_headers_of_edge_are_removed() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = gateway(&edge)?;
+    let answer = send(&router, forwarded("/_r/v1/sites/site-a/content/pages")?).await?;
+    assert_eq!(answer.status, 201);
+    assert_eq!(answer.header("x-edge-answer"), Some("stub"));
+    assert!(
+        !answer
+            .headers
+            .keys()
+            .any(|name| name.as_str().starts_with("x-ratatoskr-"))
+    );
+    Ok(())
+}
+
+/// Review L7: client-supplied forwarding metadata does not reach Edge.
+#[tokio::test]
+async fn forwarding_headers_of_the_client_are_removed() -> Outcome {
+    let edge = StubEdge::start().await?;
+    let (_tree, router) = gateway(&edge)?;
+    let mut request = forwarded("/_r/v1/sites/site-a/content/pages")?;
+    let removed = [
+        "x-forwarded-for",
+        "forwarded",
+        "x-real-ip",
+        "cf-ray",
+        "cf-ipcountry",
+    ];
+    for name in removed {
+        request.headers_mut().insert(name, "spoofed".parse()?);
+    }
+    request
+        .headers_mut()
+        .insert("cf-connecting-ip", "2.2.2.2".parse()?);
+    let answer = send(&router, request).await?;
+    assert_eq!(answer.status, 201);
+    let seen = edge.seen();
+    assert_eq!(seen.len(), 1);
+    let headers = &seen[0].headers;
+    for name in removed {
+        assert!(!headers.contains_key(name), "{name}");
+    }
+    assert_eq!(
+        headers
+            .get("cf-connecting-ip")
+            .and_then(|value| value.to_str().ok()),
+        Some("2.2.2.2")
+    );
+    assert_eq!(
+        headers
+            .get("x-ratatoskr-client-ip")
+            .and_then(|value| value.to_str().ok()),
+        Some("2.2.2.2")
+    );
+    Ok(())
+}

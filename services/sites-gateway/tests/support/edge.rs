@@ -94,6 +94,9 @@ async fn answer(
             peer,
         });
     }
+    if path.ends_with("?slow-header") {
+        tokio::time::sleep(Duration::from_secs(31)).await;
+    }
     if path.contains("/events?keepalive") {
         return events(keep_alive());
     }
@@ -104,6 +107,7 @@ async fn answer(
         StatusCode::CREATED,
         [
             ("x-edge-answer", "stub"),
+            ("x-ratatoskr-user-id", "private-claim"),
             ("content-type", "application/json"),
         ],
         r#"{"from":"edge"}"#,
