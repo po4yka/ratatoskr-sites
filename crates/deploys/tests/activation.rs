@@ -232,3 +232,21 @@ async fn retention_never_removes_a_deploy_stored_after_the_last_activation() -> 
     );
     store.cleanup().await
 }
+
+/// The first activation has no earlier activation time: every other deploy is uploaded ahead.
+#[tokio::test]
+async fn the_first_activation_keeps_deploys_uploaded_ahead() -> Outcome {
+    let store = Store::new(2).await?;
+    for tail in ['a', 'b', 'c'] {
+        deploy(&store, &commit(tail)).await?;
+    }
+    assert_eq!(
+        activate(&store, &commit('a')).await?,
+        Ok((commit('a'), None))
+    );
+    let bundles = store.deploys.site_dir(&Store::site()?).join("bundles");
+    for tail in ['a', 'b', 'c'] {
+        assert!(bundles.join(commit(tail)).is_dir(), "deploy {tail} remains");
+    }
+    store.cleanup().await
+}
