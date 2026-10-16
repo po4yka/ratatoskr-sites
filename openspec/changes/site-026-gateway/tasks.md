@@ -60,8 +60,11 @@ domain API (SITE-026 group 8), so the service needs the routes that call the sto
 - [x] 8.12 RED (L12): add `receipt.rs::stale_staging_is_removed_at_start`. Confirm that the assertion fails because `DeployStore::remove_stale_staging` removes nothing.
 - [x] 8.13 GREEN (L12): remove every `.staging/` directory of the tree, and call it when the service starts. Verify 8.12.
 - [x] 8.14 RED (L4): add `static_serving.rs::a_link_out_of_the_site_directory_serves_nothing` and `a_deploy_of_another_site_serves_nothing`. Confirm that the code assertions fail because the gateway serves them.
-- [ ] 8.15 GREEN (L4): serve a deploy only when its resolved directory is inside the site directory and its manifest names the site. Verify 8.14.
-- [ ] 8.16 RED (L5, L6, L7): add `forwarding.rs::edge_that_sends_no_header_in_time_is_unavailable`, `ratatoskr_headers_of_edge_are_removed` and `forwarding_headers_of_the_client_are_removed`. Confirm that each fails on its assertion.
-- [ ] 8.17 GREEN (L5, L6, L7): a 30-second budget for Edge's answer head, no `x-ratatoskr-*` header in Edge's answer, and no `X-Forwarded-For`, `Forwarded`, `X-Real-IP` or `CF-*` header but `CF-Connecting-IP` in a forwarded request. Verify 8.16.
-- [ ] 8.18 RED (L14): extend `unit_structure.rs` with `IPAddressDeny=any`, `IPAddressAllow=localhost`, `ProtectHostname=yes` and `SystemCallFilter=~@privileged @resources`. Confirm that it fails because the unit lacks them.
-- [ ] 8.19 GREEN (L14): add them to the unit. Verify 8.18.
+- [x] 8.15 GREEN (L4): serve a deploy only when its resolved directory is inside the site directory and its manifest names the site. Verify 8.14.
+- [x] 8.16 RED (L5, L6, L7): add `forwarding.rs::edge_that_sends_no_header_in_time_is_unavailable`, `ratatoskr_headers_of_edge_are_removed` and `forwarding_headers_of_the_client_are_removed`. Confirm that each fails on its assertion.
+- [x] 8.17 GREEN (L5, L6, L7): a 30-second budget for Edge's answer head, no `x-ratatoskr-*` header in Edge's answer, and no `X-Forwarded-For`, `Forwarded`, `X-Real-IP` or `CF-*` header but `CF-Connecting-IP` in a forwarded request. Verify 8.16.
+- [x] 8.18 RED (L14): extend `unit_structure.rs` with `IPAddressDeny=any`, `IPAddressAllow=localhost`, `ProtectHostname=yes` and `SystemCallFilter=~@privileged @resources`. Confirm that it fails because the unit lacks them.
+- [x] 8.19 GREEN (L14): add them to the unit. Verify 8.18.
+
+- [x] 8.20 RED (M4 boundary): add `activation.rs::the_first_activation_keeps_deploys_uploaded_ahead`: with retention 2, upload three deploys before the first activation and assert all remain. Confirm that the directory assertion fails because retention removes one.
+- [x] 8.21 GREEN (M4 boundary): when no previous activation exists, keep all uploaded deploys. Verify 8.20. This does not add persistent activation history.

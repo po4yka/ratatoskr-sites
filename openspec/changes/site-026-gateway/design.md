@@ -49,7 +49,8 @@ asserts the links and that the stored deploy is the same directory as before.
 After an activation, the store keeps the current and the previous deploy, every deploy stored after
 the last activation (the time `current` was last replaced), and the newest others up to the
 retention count, by the time that each deploy directory was stored, and removes the rest. A deploy
-uploaded ahead therefore survives a rollback, also with a retention of two (review M4). Uploads that
+uploaded ahead therefore survives a rollback, also with a retention of two (review M4). The first
+activation keeps every upload because no earlier activation time exists. Uploads that
 are never activated are bounded only by the bundle size limit and the owner's deploy device.
 
 ### 7. The deploy routes check the device claim again
@@ -106,5 +107,7 @@ The gateway forwards these routes below `/v1/sites/<site>/` of the site of the h
 `knowledge/search` (SITE-025 and SITE-027 site-origin, sign-in and release routes). Management and
 deploy routes are never forwarded from a site origin. The gateway removes the inbound `Host` and
 `Accept-Encoding` too, so Edge never compresses a forwarded answer and an event stream reaches the
-client unchanged. A forwarded answer that sends nothing for one minute, four times Edge's keep-alive
-interval, ends with an error.
+client unchanged. The response head has a 30-second budget. The gateway removes `x-ratatoskr-*`
+from the response, and removes `X-Forwarded-For`, `Forwarded`, `X-Real-IP` and all `CF-*` fields except
+`CF-Connecting-IP` from the request. A forwarded answer that sends nothing for one minute, four times
+Edge's keep-alive interval, ends with an error.
