@@ -2,7 +2,7 @@
 //! allowlist write and keep the markup of the contract fixtures of `sites/page.v1`.
 //!
 //! The four strings below are the `html` of `fixtures/sites/page/valid/*.json` in
-//! `ratatoskr-contracts` at 2c726027da79e0e899ad482afead0a2000b03e61. The contract fixtures win:
+//! `ratatoskr-contracts` at 66bdb0c0545363f06137f13687084c21db9b27c5. The contract fixtures win:
 //! when the renderer and a fixture disagree, the renderer changes.
 
 use std::collections::BTreeMap;
