@@ -198,3 +198,11 @@ These tests include real store/retry/activation, changed signature and identitie
 withdrawal/rebind/epoch changes, bounded admission, caller cancellation, tracked shutdown and
 rollback with unavailable tool paths. They require the same disposable PostgreSQL and NATS as the
 normal gate, plus anonymous internet access to the exact public GHCR artifact digests.
+
+The ARM64 artifact job uses `.github/scripts/smoke-artifact.sh` to start the real exported service
+as its image user, within 512 MiB and without swap. It first requires readiness 503 with no verifier,
+then installs the approved checksummed ARM64 tools and reviewed public trust-root fixture at
+root-owned read-only paths and requires readiness 200. Both starts must stop cleanly. The script
+uses a fresh PostgreSQL fixture on loopback port 55432, and removes only its labeled containers.
+The trust-root fixture is fetched by an immutable workspace commit and SHA-256; no workspace
+checkout or GitHub token is needed by the child build or this smoke test.

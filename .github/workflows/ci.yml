@@ -172,52 +172,7 @@ jobs:
       # without RATATOSKR__BUS__URL it connects to no bus. `--network host` for both, so every
       # address is 127.0.0.1 as in the unit.
       - name: The artifact serves and stops cleanly
-        run: |
-          set -euo pipefail
-          docker run -d --name smoke-db --network host \
-            -e POSTGRES_USER=sites -e POSTGRES_PASSWORD=sites -e POSTGRES_DB=sites \
-            -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8" \
-            postgres:17@sha256:e38411452a464af89e5adadb8d223bf53b898d47d6ef918b2d58c08707350449
-          for _ in $(seq 1 60); do
-            if docker exec smoke-db pg_isready -h 127.0.0.1 -U sites -d sites >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-          cat > "$RUNNER_TEMP/smoke.env" <<'ENV'
-          RATATOSKR__ADMIN__BIND=127.0.0.1:9472
-          RATATOSKR__API__LISTEN_ADDRESS=127.0.0.1:8100
-          RATATOSKR__DATABASE__URL=postgres://sites:sites@127.0.0.1:5432/sites
-          ENV
-          sed -i 's/^[[:space:]]*//' "$RUNNER_TEMP/smoke.env"
-          docker run --rm --network host --env-file "$RUNNER_TEMP/smoke.env" \
-            ratatoskr-sites:ci check-config 2>/dev/null
-          docker run -d --name smoke --network host --env-file "$RUNNER_TEMP/smoke.env" \
-            ratatoskr-sites:ci
-          ready=no
-          for _ in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:9472/health/ready >/dev/null; then ready=yes; break; fi
-            sleep 1
-          done
-          if [ "$ready" != yes ]; then
-            docker logs smoke >&2
-            echo "::error::Sites did not report ready within 60 s"
-            exit 1
-          fi
-          present=$(docker exec smoke-db psql -U sites -d sites -Atc \
-            "select to_regclass('sites.releases') is not null")
-          if [ "$present" != "t" ]; then
-            echo "::error::sites.releases is absent after Sites reported itself ready"
-            exit 1
-          fi
-          docker stop -t 40 smoke
-          code=$(docker inspect -f '{{.State.ExitCode}}' smoke)
-          if [ "$code" != 0 ]; then
-            docker logs smoke >&2
-            echo "::error::Sites exited $code after SIGTERM"
-            exit 1
-          fi
-          docker rm -f smoke smoke-db
+        run: bash .github/scripts/smoke-artifact.sh
 
   # The artifact of this commit, published only after the gate and the arm64 smoke test have passed
   # on it: `ghcr.io/po4yka/ratatoskr-sites:sha-<commit>` with SHA256SUMS, an SPDX SBOM and a
