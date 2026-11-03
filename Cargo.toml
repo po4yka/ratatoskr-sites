@@ -71,9 +71,9 @@ unicode-normalization = { version = "0.1.25", default-features = false, features
 caseless = "0.2.2"
 
 # ---- the release builder ----
-# CommonMark with tables, strikethrough, task lists and wikilinks, the version of ratatoskr-notes.
+# CommonMark with tables, strikethrough, task lists and wikilinks.
 # The release builder parses each selected note into one tree, and the privacy filter runs on it.
-pulldown-cmark = { version = "0.13.4", default-features = false }
+pulldown-cmark = { version = "0.13.5", default-features = false }
 # The tokenizer of the HTML standard, for the closed element and attribute allowlist of the HTML
 # body of a page (workspace spec site-release-privacy, "Rendered HTML is sanitised"). It reads the
 # markup as a browser does, so a fragment cannot hide an element from the allowlist. Not ammonia:

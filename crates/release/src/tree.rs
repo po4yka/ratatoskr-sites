@@ -483,3 +483,32 @@ pub(crate) fn text_of(nodes: &[Node]) -> String {
     }
     text
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Options, Parser, parse, text_of};
+
+    #[test]
+    fn empty_alias_wikilinks_have_bounded_parser_events() {
+        // RUSTSEC-2026-0414: empty aliases must not reuse the following siblings as children.
+        // Stop consuming at the bound so a vulnerable parser cannot exhaust the test process.
+        let body = "[[[[^(\n|]]]]=]]]]]]]]\n".repeat(8);
+        let options = Options::ENABLE_TABLES
+            | Options::ENABLE_STRIKETHROUGH
+            | Options::ENABLE_TASKLISTS
+            | Options::ENABLE_WIKILINKS;
+        let event_limit = body.len() * 2;
+        let events = Parser::new_ext(&body, options)
+            .take(event_limit + 1)
+            .count();
+        assert!(
+            events <= event_limit,
+            "empty aliases expanded to {events} events"
+        );
+    }
+
+    #[test]
+    fn empty_alias_wikilink_does_not_duplicate_following_text() {
+        assert_eq!(text_of(&parse("[[target|]] tail")), " tail");
+    }
+}
